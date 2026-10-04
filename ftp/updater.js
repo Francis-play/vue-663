@@ -9,6 +9,29 @@
   var MANIFEST_URL = BASE_URL + 'manifest.txt';
   var ALLOWED_EXT = ['.js', '.aes', '.json'];
   var EXCLUDE = ['config.json'];
+  // Payload bins on demand: download ONLY if missing locally, with size gate.
+  var BIN_ON_DEMAND = [{ path: 'payloads/hen.bin', size: 500448 }];
+  function binWanted(filename) {
+    for (var i = 0; i < BIN_ON_DEMAND.length; i++) {
+      if (BIN_ON_DEMAND[i].path === filename) return BIN_ON_DEMAND[i];
+    }
+    return null;
+  }
+  function probeLocal(filename, callback) {
+    var xhr = new jsmaf.XMLHttpRequest();
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        var ok = (xhr.status === 200 || xhr.status === 0) &&
+          !!xhr.responseText && xhr.responseText.length > 0;
+        callback(ok);
+      }
+    };
+    xhr.onerror = function () { callback(false); };
+    try {
+      xhr.open('GET', 'file://../download0/' + filename, true);
+      xhr.send();
+    } catch (e) { callback(false); }
+  }
   var FILES = [];
   var updated = 0;
   var failed = 0;
@@ -160,6 +183,39 @@
     var filename = FILES[index];
     updateStatus(filename);
     updateProgress();
+    var wanted = binWanted(filename);
+    if (wanted) {
+      updateStatus('check ' + filename);
+      probeLocal(filename, function (exists) {
+        if (exists) {
+          skipped++;
+          index++;
+          jsmaf.setTimeout(processNext, 1);
+          return;
+        }
+        var bxhr = new jsmaf.XMLHttpRequest();
+        bxhr.onreadystatechange = function () {
+          if (bxhr.readyState === 4) {
+            var content = bxhr.responseText;
+            if ((bxhr.status === 200 || bxhr.status === 0) &&
+              content && content.length === wanted.size) {
+              writeFile(filename, content, function (err) {
+                if (err) { failed++; } else { updated++; }
+                index++;
+                jsmaf.setTimeout(processNext, 10);
+              });
+            } else {
+              failed++;
+              index++;
+              jsmaf.setTimeout(processNext, 10);
+            }
+          }
+        };
+        bxhr.open('GET', BASE_URL + filename, true);
+        bxhr.send();
+      });
+      return;
+    }
     if (!isAllowed(filename) || EXCLUDE.indexOf(filename) !== -1) {
       skipped++;
       index++;
