@@ -8,12 +8,14 @@ export const lang: Record<string, string> = {
   exit: 'Exit',
   autoLapse: 'Auto Lapse',
   autoPoop: 'Auto Poop',
+  autoRelapse: 'Auto Relapse',
   autoClose: 'Auto Close',
   music: 'Music',
   jbBehavior: 'JB Behavior',
   jbBehaviorAuto: 'Auto Detect',
   jbBehaviorNetctrl: 'NetControl',
   jbBehaviorLapse: 'Lapse',
+  jbBehaviorRelapse: 'Relapse (663)',
   theme: 'Theme',
   xToGoBack: 'X to go back',
   oToGoBack: 'O to go back'
@@ -49,12 +51,14 @@ switch (detectedLocale) {
     lang.exit = 'Salir'
     lang.autoLapse = 'Auto Lapse'
     lang.autoPoop = 'Auto Poop'
+    lang.autoRelapse = 'Auto Relapse'
     lang.autoClose = 'Auto Cerrar'
     lang.music = 'Musica'
     lang.jbBehavior = 'Comportamiento JB'
     lang.jbBehaviorAuto = 'Auto Detectar'
     lang.jbBehaviorNetctrl = 'NetControl'
     lang.jbBehaviorLapse = 'Lapse'
+    lang.jbBehaviorRelapse = 'Relapse (663)'
     lang.theme = 'Tema'
     lang.xToGoBack = 'X para volver'
     lang.oToGoBack = 'O para volver'

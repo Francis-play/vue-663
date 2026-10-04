@@ -2,6 +2,7 @@
     "config": {
         "autolapse": false,
         "autopoop": false,
+        "autorelapse": false,
         "autoclose": false,
         "autoclose_delay": 3000,
         "music": true,

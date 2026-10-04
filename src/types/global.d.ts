@@ -33,7 +33,11 @@ declare var is_jailbroken: boolean
 declare var CONFIG: {
   autolapse?: boolean;
   autopoop?: boolean;
+  autorelapse?: boolean;
   autoclose?: boolean;
+  autoclose_delay?: number;
+  jb_behavior?: number;
+  theme?: string;
   music?: boolean;
 } | undefined
 

@@ -284,6 +284,7 @@ try {
                 config: {
                     autolapse: false,
                     autopoop: false,
+                    autorelapse: false,
                     autoclose: false,
                     autoclose_delay: 3000,
                     music: true,
@@ -309,6 +310,9 @@ try {
             include('loader.js')
         } else if(CONFIG.autopoop){
             CONFIG.jb_behavior = 1
+            include('loader.js')
+        } else if(CONFIG.autorelapse){
+            CONFIG.jb_behavior = 3
             include('loader.js')
         } 
         else {

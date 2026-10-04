@@ -40,6 +40,7 @@ if (typeof lang === 'undefined') {
   const currentConfig: {
     autolapse: boolean
     autopoop: boolean
+    autorelapse: boolean
     autoclose: boolean
     autoclose_delay: number
     music: boolean
@@ -48,6 +49,7 @@ if (typeof lang === 'undefined') {
   } = {
     autolapse: false,
     autopoop: false,
+    autorelapse: false,
     autoclose: false,
     autoclose_delay: 0,
     music: true,
@@ -59,8 +61,8 @@ if (typeof lang === 'undefined') {
   let userPayloads: string[] = []
   let configLoaded = false
 
-  const jbBehaviorLabels = [lang.jbBehaviorAuto, lang.jbBehaviorNetctrl, lang.jbBehaviorLapse]
-  const jbBehaviorImgKeys = ['jbBehaviorAuto', 'jbBehaviorNetctrl', 'jbBehaviorLapse']
+  const jbBehaviorLabels = [lang.jbBehaviorAuto, lang.jbBehaviorNetctrl, lang.jbBehaviorLapse, lang.jbBehaviorRelapse]
+  const jbBehaviorImgKeys = ['jbBehaviorAuto', 'jbBehaviorNetctrl', 'jbBehaviorLapse', 'jbBehaviorRelapse']
 
   function scanThemes (): string[] {
     const themes: string[] = []
@@ -174,6 +176,7 @@ if (typeof lang === 'undefined') {
   const configOptions = [
     { key: 'autolapse', label: lang.autoLapse, imgKey: 'autoLapse', type: 'toggle' },
     { key: 'autopoop', label: lang.autoPoop, imgKey: 'autoPoop', type: 'toggle' },
+    { key: 'autorelapse', label: lang.autoRelapse, imgKey: 'autoRelapse', type: 'toggle' },
     { key: 'autoclose', label: lang.autoClose, imgKey: 'autoClose', type: 'toggle' },
     { key: 'music', label: lang.music, imgKey: 'music', type: 'toggle' },
     { key: 'jb_behavior', label: lang.jbBehavior, imgKey: 'jbBehavior', type: 'cycle' },
@@ -439,6 +442,7 @@ if (typeof lang === 'undefined') {
       config: {
         autolapse: currentConfig.autolapse,
         autopoop: currentConfig.autopoop,
+        autorelapse: currentConfig.autorelapse,
         autoclose: currentConfig.autoclose,
         autoclose_delay: currentConfig.autoclose_delay,
         music: currentConfig.music,
@@ -474,6 +478,7 @@ if (typeof lang === 'undefined') {
 
           currentConfig.autolapse = CONFIG.autolapse || false
           currentConfig.autopoop = CONFIG.autopoop || false
+          currentConfig.autorelapse = CONFIG.autorelapse || false
           currentConfig.autoclose = CONFIG.autoclose || false
           currentConfig.autoclose_delay = CONFIG.autoclose_delay || 0
           currentConfig.music = CONFIG.music !== false
@@ -527,7 +532,7 @@ if (typeof lang === 'undefined') {
           log(key + ' = ' + currentConfig.theme)
         }
       } else {
-        const boolKey = key as 'autolapse' | 'autopoop' | 'autoclose' | 'music'
+        const boolKey = key as 'autolapse' | 'autopoop' | 'autorelapse' | 'autoclose' | 'music'
         currentConfig[boolKey] = !currentConfig[boolKey]
 
         if (boolKey === 'music') {
@@ -543,22 +548,31 @@ if (typeof lang === 'undefined') {
 
         if (key === 'autolapse' && currentConfig.autolapse === true) {
           currentConfig.autopoop = false
+          currentConfig.autorelapse = false
           for (let i = 0; i < configOptions.length; i++) {
-            if (configOptions[i]!.key === 'autopoop') {
+            if (configOptions[i]!.key === 'autopoop' || configOptions[i]!.key === 'autorelapse') {
               updateValueText(i)
-              break
             }
           }
-          log('autopoop disabled (autolapse enabled)')
+          log('autopoop/autorelapse disabled (autolapse enabled)')
         } else if (key === 'autopoop' && currentConfig.autopoop === true) {
           currentConfig.autolapse = false
+          currentConfig.autorelapse = false
           for (let i = 0; i < configOptions.length; i++) {
-            if (configOptions[i]!.key === 'autolapse') {
+            if (configOptions[i]!.key === 'autolapse' || configOptions[i]!.key === 'autorelapse') {
               updateValueText(i)
-              break
             }
           }
-          log('autolapse disabled (autopoop enabled)')
+          log('autolapse/autorelapse disabled (autopoop enabled)')
+        } else if (key === 'autorelapse' && currentConfig.autorelapse === true) {
+          currentConfig.autolapse = false
+          currentConfig.autopoop = false
+          for (let i = 0; i < configOptions.length; i++) {
+            if (configOptions[i]!.key === 'autolapse' || configOptions[i]!.key === 'autopoop') {
+              updateValueText(i)
+            }
+          }
+          log('autolapse/autopoop disabled (autorelapse enabled)')
         }
 
         log(key + ' = ' + currentConfig[boolKey])
