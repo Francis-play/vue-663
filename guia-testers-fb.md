@@ -19,9 +19,8 @@ Necesitas: PC y consola en la misma red (wifi de la casa sirve).
 4. En el PS4 abre Vue -> payloads -> corre `ftp-server`. Te muestra una direccion IP, anotala.
 5. En la PC abre FileZilla (o el FTP que uses), conectate a esa IP.
 6. Busca la carpeta `payloads` y reemplaza el archivo `updater.js` que esta ahi con el que descargaste en el paso 3. Es UN solo archivo, nada mas.
-7. En Vue -> payloads -> corre `updater`. Espera a que diga Update Complete. El updater trae solo lo que falta: si no tienes el `hen.bin` en `payloads`, lo descarga solo (500KB); si ya lo tienes, lo omite.
-8. Abre en Vue el Payload Menu: si ves `hen.bin` en la lista, ya estas. Si el updater te dijo que lo subas por FTP, subelo a `payloads` (una sola vez, queda guardado).
-9. Si ademas quieres tu `goldhen.bin` propio, subelo a `payloads` por FTP. Es opcional y de tu copia (https://github.com/GoldHEN/GoldHEN/releases).
+7. En Vue -> payloads -> corre `updater`. Espera a que diga Update Complete. El updater trae solo lo que falta: si no tienes `hen.bin` o `goldhen.bin` en `payloads`, los descarga solos; si ya los tienes, los omite.
+8. Abre en Vue el Payload Menu: si ves `hen.bin` y `goldhen.bin` en la lista, ya estas. Si el updater te dijo que alguno va por FTP, subelo a `payloads` (una sola vez, queda guardado).
 10. Cierra Vue del todo (boton PS -> cerrar aplicacion) y abrelo de nuevo.
 11. Presiona Jailbreak y mira el log en pantalla.
 12. Cuando el exploit termine, Vue queda escuchando en el puerto 9020: si el HEN no cargo solo desde `payloads`, envia tu bin desde la PC (netcat o payload sender a la IP de la consola, puerto 9020).

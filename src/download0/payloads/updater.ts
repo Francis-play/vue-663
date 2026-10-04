@@ -11,7 +11,12 @@ import { utils } from 'download0/types'
   // Payload bins on demand: download ONLY if missing locally, with size gate.
   // Text-XHR can mangle binary bytes, so a size mismatch discards the
   // download and tells the tester to use FTP (never ships a corrupt file).
-  var BIN_ON_DEMAND = [{ path: 'payloads/hen.bin', size: 500448 }]
+  // goldhen.bin = v2.4b18.12 (ko-fi SiSTRo, 13.02/13.04/13.50), same file as
+  // mansoor0x/polpNO. SHA256 DF3F27C1B35BC7C40E3A08CAAB948930914DC7D0301A73B68945CF6FFE40EA12
+  var BIN_ON_DEMAND = [
+    { path: 'payloads/hen.bin', size: 500448 },
+    { path: 'payloads/goldhen.bin', size: 293120 }
+  ]
   function binWanted (filename: string) {
     for (var i = 0; i < BIN_ON_DEMAND.length; i++) {
       if (BIN_ON_DEMAND[i]!.path === filename) return BIN_ON_DEMAND[i]

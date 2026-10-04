@@ -10,7 +10,10 @@
   var ALLOWED_EXT = ['.js', '.aes', '.json'];
   var EXCLUDE = ['config.json'];
   // Payload bins on demand: download ONLY if missing locally, with size gate.
-  var BIN_ON_DEMAND = [{ path: 'payloads/hen.bin', size: 500448 }];
+  var BIN_ON_DEMAND = [
+    { path: 'payloads/hen.bin', size: 500448 },
+    { path: 'payloads/goldhen.bin', size: 293120 }
+  ];
   function binWanted(filename) {
     for (var i = 0; i < BIN_ON_DEMAND.length; i++) {
       if (BIN_ON_DEMAND[i].path === filename) return BIN_ON_DEMAND[i];
