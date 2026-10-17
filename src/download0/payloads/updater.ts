@@ -202,6 +202,7 @@ import { utils } from 'download0/types'
       // On demand: already on console -> skip, else download with size gate.
       updateStatus('check ' + filename)
       probeLocal(filename, function (err, exists) {
+        if (err) { log('probe failed: ' + filename) }
         if (exists) {
           log('exists, skip: ' + filename)
           skipped++

@@ -190,6 +190,7 @@
     if (wanted) {
       updateStatus('check ' + filename);
       probeLocal(filename, function (err, exists) {
+        if (err) { log('probe failed: ' + filename); }
         if (exists) {
           skipped++;
           index++;
