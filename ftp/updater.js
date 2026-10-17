@@ -26,14 +26,14 @@
       if (xhr.readyState === 4) {
         var ok = (xhr.status === 200 || xhr.status === 0) &&
           !!xhr.responseText && xhr.responseText.length > 0;
-        callback(ok);
+        callback(null, ok);
       }
     };
-    xhr.onerror = function () { callback(false); };
+    xhr.onerror = function () { callback(new Error('probe failed'), false); };
     try {
       xhr.open('GET', 'file://../download0/' + filename, true);
       xhr.send();
-    } catch (e) { callback(false); }
+    } catch (e) { callback(new Error('probe failed'), false); }
   }
   var FILES = [];
   var updated = 0;
@@ -189,7 +189,7 @@
     var wanted = binWanted(filename);
     if (wanted) {
       updateStatus('check ' + filename);
-      probeLocal(filename, function (exists) {
+      probeLocal(filename, function (err, exists) {
         if (exists) {
           skipped++;
           index++;

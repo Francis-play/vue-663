@@ -23,20 +23,20 @@ import { utils } from 'download0/types'
     }
     return null
   }
-  function probeLocal (filename: string, callback: (exists: boolean) => void) {
+  function probeLocal (filename: string, callback: (err: Error | null, exists: boolean) => void) {
     var xhr = new jsmaf.XMLHttpRequest()
     xhr.onreadystatechange = function () {
       if (xhr.readyState === 4) {
         var ok = (xhr.status === 200 || xhr.status === 0) &&
           !!xhr.responseText && xhr.responseText.length > 0
-        callback(ok)
+        callback(null, ok)
       }
     }
-    xhr.onerror = function () { callback(false) }
+    xhr.onerror = function () { callback(new Error('probe failed'), false) }
     try {
       xhr.open('GET', 'file://../download0/' + filename, true)
       xhr.send()
-    } catch (e) { callback(false) }
+    } catch (e) { callback(new Error('probe failed'), false) }
   }
 
   var FILES: string[] = []
@@ -201,7 +201,7 @@ import { utils } from 'download0/types'
     if (wanted) {
       // On demand: already on console -> skip, else download with size gate.
       updateStatus('check ' + filename)
-      probeLocal(filename, function (exists) {
+      probeLocal(filename, function (err, exists) {
         if (exists) {
           log('exists, skip: ' + filename)
           skipped++
