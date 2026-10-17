@@ -6,13 +6,13 @@
 (function () {
   var before = (typeof debugging !== 'undefined' && debugging.info && debugging.info.memory)
     ? debugging.info.memory.available
-    : -1;
-  log('F1 before avail=' + before);
-  var t = new Uint8Array(14 << 20);
-  t[0] = 1;
-  t[t.length - 1] = 1;
+    : -1
+  log('F1 before avail=' + before)
+  var t = new Uint8Array(14 << 20)
+  t[0] = 1
+  t[t.length - 1] = 1
   var after = (typeof debugging !== 'undefined' && debugging.info && debugging.info.memory)
     ? debugging.info.memory.available
-    : -1;
-  log('F1 ok after avail=' + after + ' delta=' + (before - after));
-})();
+    : -1
+  log('F1 ok after avail=' + after + ' delta=' + (before - after))
+})()
