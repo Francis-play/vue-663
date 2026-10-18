@@ -778,14 +778,21 @@ export function binloader_init () {
   function bin_loader_main () {
     log('=== PS4 Payload Loader ===')
 
+    // Manual payloads (from config `payloads`). If one actually runs, stop here
+    // so we don't stack a second HEN/GoldHEN on top of it.
     if (typeof payloads !== 'undefined') {
+      let loaded = false
       for (const payload of payloads) {
         log('Loading payload: ' + payload)
         if (bl_file_exists(payload)) {
-          bl_load_from_file(payload, true)
+          if (bl_load_from_file(payload, true)) loaded = true
         } else {
           log(payload + ' not found!')
         }
+      }
+      if (loaded || is_jailbroken) {
+        log('Manual payload applied - skipping auto HEN/GoldHEN')
+        return true
       }
     }
 
