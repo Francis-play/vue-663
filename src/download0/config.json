@@ -5,6 +5,7 @@
         "autorelapse": false,
         "autoclose": false,
         "autoclose_delay": 3000,
+        "autogoldhen": true,
         "music": true,
         "jb_behavior": 0,
         "theme": "default"

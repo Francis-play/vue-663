@@ -10,9 +10,10 @@
   var ALLOWED_EXT = ['.js', '.aes', '.json']
   var EXCLUDE = ['config.json']
   // Payload bins on demand: download ONLY if missing locally, with size gate.
+  // goldhen.bin is shipped as payload.bin (download0 root) so binloader auto-loads it first.
   var BIN_ON_DEMAND = [
-    { path: 'payloads/hen.bin', size: 500448 },
-    { path: 'payloads/goldhen.bin', size: 293120 }
+    { path: 'payloads/hen.bin', size: 500448, goldhen: false },
+    { path: 'payload.bin', size: 293120, goldhen: true }
   ]
   function binWanted (filename) {
     for (var i = 0; i < BIN_ON_DEMAND.length; i++) {
@@ -40,6 +41,9 @@
   var failed = 0
   var skipped = 0
   var index = 0
+  // UI switch (config.json `autogoldhen`, default true). When OFF, GoldHEN
+  // (payload.bin) is NOT downloaded and HEN (payloads/hen.bin) is applied.
+  var autoGoldhen = true
 
   // UI Elements
   var progressBg
@@ -188,6 +192,7 @@
     updateProgress()
     var wanted = binWanted(filename)
     if (wanted) {
+      var isGoldhen = wanted.goldhen === true
       updateStatus('check ' + filename)
       probeLocal(filename, function (err, exists) {
         if (err) { log('probe failed: ' + filename) }
@@ -195,6 +200,14 @@
           skipped++
           index++
           jsmaf.setTimeout(processNext, 1)
+          return
+        }
+        // GoldHEN (payload.bin) + switch OFF: do not download, HEN will be applied.
+        if (isGoldhen && !autoGoldhen) {
+          log('goldhen OFF: skip ' + filename + ' (HEN will be applied)')
+          skipped++
+          index++
+          jsmaf.setTimeout(processNext, 10)
           return
         }
         var bxhr = new jsmaf.XMLHttpRequest()
@@ -278,6 +291,25 @@
     xhr.open('GET', MANIFEST_URL, true)
     xhr.send()
   }
+  // Read the UI switch from config.json before deciding on GoldHEN.
+  function loadSwitch () {
+    var xhr = new jsmaf.XMLHttpRequest()
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        try {
+          var data = JSON.parse(xhr.responseText || '{}')
+          if (data && data.config && data.config.autogoldhen === false) {
+            autoGoldhen = false
+          }
+        } catch (e) { /* default: GoldHEN on */ }
+        fetchManifest()
+      }
+    }
+    try {
+      xhr.open('GET', 'file://../download0/config.json', true)
+      xhr.send()
+    } catch (e) { fetchManifest() }
+  }
   initUI()
-  fetchManifest()
+  loadSwitch()
 })()

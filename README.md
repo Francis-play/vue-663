@@ -13,7 +13,7 @@
 # What this repo adds
 - **663 / Relapse** JB behaviour for **13.02–13.04** (see [Config](#config)).
 - **Own updater**, bootstrapped **once** over FTP. It pulls from `https://francis-play.github.io/vue-663/download0/`.
-- On-demand `hen.bin` / `goldhen.bin` with a **size gate**: a bad download is discarded, never written (it asks you to send that bin over FTP once).
+- On-demand bins with a **size gate**: a bad download is discarded, never written (it asks you to send that bin over FTP once). GoldHEN ships as `payload.bin` (app root) so it **auto-loads first**; `hen.bin` is kept in `payloads/` for manual use.
 
 ## Vulnerability Scope
 KEX = Kernel Exploit
@@ -43,8 +43,8 @@ KEX = Kernel Exploit
 3. On your PC, download this repo's updater: open [`ftp/updater.js`](https://github.com/Francis-play/vue-663/blob/main/ftp/updater.js) and press **Raw**, then save it **exactly** as `updater.js` (make sure it is not `updater.js.txt`).
 4. Connect with your FTP client (FileZilla, WinSCP, etc.) to that `<ip>:<port>`.
 5. Navigate to the app's `payloads` folder and **replace `updater.js`** with the file from step 3. One file only.
-6. In **Vue → Payloads → `updater`**. Wait until it says **Update Complete**. It only fetches what is missing (including `hen.bin` / `goldhen.bin` on first run).
-7. If the updater says a bin must be sent by FTP (size gate), upload it to `payloads` once. The Payload Menu should now list `hen.bin` and `goldhen.bin`.
+6. In **Vue → Payloads → `updater`**. Wait until it says **Update Complete**. It only fetches what is missing (GoldHEN as `payload.bin`, plus `hen.bin`, on first run).
+7. If the updater says a bin must be sent by FTP (size gate), upload it to the app's `payload.bin` (GoldHEN) or `payloads/hen.bin` once. `payload.bin` is what binloader auto-loads first.
 8. Fully close Vue (PS button → **Close Application**) and open it again.
 9. Press **Jailbreak** and watch the on-screen log.
    * If it does not run: **Config → JB Behavior → `Relapse (663)`**, go back and press **Jailbreak** from the main menu.
@@ -115,7 +115,14 @@ Vue comes with a few custom options. The **Jailbreak button** auto-detects firmw
   * **NetControl** — 12.50–13.00 (runs on 9.00+).
   * **Relapse (663)** — **13.02–13.04** (this repo's entry).
 
-Other options: **Auto Lapse** / **Auto Relapse** (launch a kernel exploit on opening the app), **Auto Close** (close the app after a successful jailbreak), **Music** (on/off), **Theme**.
+Other options: **Auto Lapse** / **Auto Relapse** (launch a kernel exploit on opening the app), **Auto Close** (close the app after a successful jailbreak), **Auto GoldHEN** (see below), **Music** (on/off), **Theme**.
+
+### Auto GoldHEN
+Default **ON**. Controls which HEN-family payload is applied:
+* **ON** — the auto payload is GoldHEN, shipped as `payload.bin` (app root) and loaded first by binloader.
+* **OFF** — GoldHEN is not downloaded/applied; `hen.bin` (in `payloads/`) is loaded instead. The app warns "GoldHEN auto OFF".
+
+The updater honors this: if GoldHEN is already present it is not re-downloaded; if missing and the switch is ON it is downloaded and applied; if OFF, HEN is applied instead.
 
 # Payloads
 Vue After Free comes preloaded with some payloads.
@@ -137,7 +144,8 @@ The **`updater`** payload grabs the latest files from this repo's GitHub Pages (
 
 * First time only: bootstrap it over FTP (see [Setup](#setup--choose-your-path)).
 * After that: run `updater` from the Payloads menu and relaunch.
-* Bins (`hen.bin`, `goldhen.bin`) are downloaded on demand and size-checked. If a bin is flagged, send it over FTP once.
+* If GoldHEN (`payload.bin`) is already present it is **not** re-downloaded. If missing: with **Auto GoldHEN ON** it is downloaded and applied; with it **OFF**, HEN is applied instead.
+* Bins are downloaded on demand and size-checked: GoldHEN as `payload.bin` (app root, auto-loaded first) and `hen.bin` (in `payloads/`, manual). If a bin is flagged, send it over FTP once.
 
 # Themes
 Themes can be added by copying the folder to `/download0/themes/`. The default theme is a good example.
@@ -216,8 +224,8 @@ Necesitas: PC y consola en la misma red.
 4. En el PS4 abre Vue → **payloads** → corre `ftp-server`. Te muestra una dirección `ftp://<ip>:<puerto>`, anótala.
 5. En la PC abre FileZilla (o el FTP que uses) y conéctate a esa dirección.
 6. Busca la carpeta `payloads` y reemplaza el `updater.js` que está ahí con el que descargaste. Es **un solo archivo**.
-7. En Vue → **payloads** → corre `updater`. Espera a que diga **Update Complete**. Trae solo lo que falta: si no tienes `hen.bin` o `goldhen.bin`, los baja solos; si ya los tienes, los omite.
-8. Abre el **Payload Menu**: si ves `hen.bin` y `goldhen.bin`, ya estás. Si el updater dijo que alguno va por FTP, súbelo a `payloads` (una sola vez).
+7. En Vue → **payloads** → corre `updater`. Espera a que diga **Update Complete**. Trae solo lo que falta: GoldHEN como `payload.bin` (raíz del app, se auto-carga primero) y `hen.bin` en `payloads/`.
+8. GoldHEN (`payload.bin`) lo toma el binloader solo. `hen.bin` queda en el Payload Menu para correr a mano. Si el updater dijo que alguno va por FTP, súbelo una vez.
 9. Cierra Vue por completo (botón PS → cerrar aplicación) y ábrelo de nuevo.
 10. Presiona **Jailbreak** y mira el log en pantalla.
     - Si no arranca: **Config → JB Behavior → `Relapse (663)`** y de nuevo **Jailbreak** en el menú principal.
@@ -267,5 +275,6 @@ Notas:
 
 ### Notas
 - El jailbreak **no es persistente**: reboot = estado limpio, se corre de nuevo.
+- **Auto GoldHEN** (Config, ON por default): ON = se aplica GoldHEN (`payload.bin`); OFF = se aplica `hen.bin` y **no** se baja GoldHEN. Si GoldHEN ya está presente, no se re-descarga.
 - Cierra juegos/apps antes de probar.
 - Esto es solo para **13.02/13.04**. Relapse llega hasta 13.52, pero este repo todavía no trae archivos arriba de 13.04. Otras FW siguen con Lapse/Netctrl y no tocan este camino.

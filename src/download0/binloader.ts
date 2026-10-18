@@ -789,6 +789,20 @@ export function binloader_init () {
       }
     }
 
+    // Priority 0.5: HEN override. If CONFIG.autogoldhen is false, load hen.bin
+    // (in payloads/) instead of the auto payload (GoldHEN, shipped as payload.bin).
+    if (typeof CONFIG !== 'undefined' && CONFIG.autogoldhen === false) {
+      const henPath = '/download0/payloads/hen.bin'
+      const henSize = bl_file_exists(henPath)
+      if (henSize > 0) {
+        log('HEN mode: GoldHEN auto OFF, loading ' + henPath + ' (' + henSize + ' bytes)')
+        utils.notify('HEN mode: loading hen.bin\n(GoldHEN auto disabled)')
+        return bl_load_from_file(henPath, false)
+      }
+      log('HEN requested but ' + henPath + ' not found - falling back to auto payload')
+      utils.notify('hen.bin not found\nFalling back to GoldHEN')
+    }
+
     // Priority 1: Check for USB payload on usb0-usb4 (like BD-JB does)
     for (const usb_path of USB_PAYLOAD_PATHS) {
       const usb_size = bl_file_exists(usb_path)

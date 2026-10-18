@@ -11,11 +11,12 @@ import { utils } from 'download0/types'
   // Payload bins on demand: download ONLY if missing locally, with size gate.
   // Text-XHR can mangle binary bytes, so a size mismatch discards the
   // download and tells the tester to use FTP (never ships a corrupt file).
-  // goldhen.bin = v2.4b18.12 (ko-fi SiSTRo, 13.02/13.04/13.50), same file as
+  // GoldHEN = v2.4b18.12 (ko-fi SiSTRo, 13.02/13.04/13.50), same file as
   // mansoor0x/polpNO. SHA256 DF3F27C1B35BC7C40E3A08CAAB948930914DC7D0301A73B68945CF6FFE40EA12
+  // It is shipped as `payload.bin` (download0 root) so binloader auto-loads it first.
   var BIN_ON_DEMAND = [
-    { path: 'payloads/hen.bin', size: 500448 },
-    { path: 'payloads/goldhen.bin', size: 293120 }
+    { path: 'payloads/hen.bin', size: 500448, goldhen: false },
+    { path: 'payload.bin', size: 293120, goldhen: true }
   ]
   function binWanted (filename: string) {
     for (var i = 0; i < BIN_ON_DEMAND.length; i++) {
@@ -44,6 +45,9 @@ import { utils } from 'download0/types'
   var failed = 0
   var skipped = 0
   var index = 0
+  // UI switch (config.json `autogoldhen`, default true). When OFF, GoldHEN
+  // (payload.bin) is NOT downloaded and HEN (payloads/hen.bin) is applied.
+  var autoGoldhen = true
 
   // UI Elements
   var progressBg: Image
@@ -200,6 +204,7 @@ import { utils } from 'download0/types'
     var wanted = binWanted(filename)
     if (wanted) {
       // On demand: already on console -> skip, else download with size gate.
+      var isGoldhen = wanted.goldhen === true
       updateStatus('check ' + filename)
       probeLocal(filename, function (err, exists) {
         if (err) { log('probe failed: ' + filename) }
@@ -208,6 +213,14 @@ import { utils } from 'download0/types'
           skipped++
           index++
           jsmaf.setTimeout(processNext, 1)
+          return
+        }
+        // GoldHEN (payload.bin) + switch OFF: do not download, HEN will be applied.
+        if (isGoldhen && !autoGoldhen) {
+          log('goldhen OFF: skip ' + filename + ' (HEN will be applied)')
+          skipped++
+          index++
+          jsmaf.setTimeout(processNext, 10)
           return
         }
         var bxhr = new jsmaf.XMLHttpRequest()
@@ -297,6 +310,26 @@ import { utils } from 'download0/types'
     xhr.send()
   }
 
+  // Read the UI switch from config.json before deciding on GoldHEN.
+  function loadSwitch () {
+    var xhr = new jsmaf.XMLHttpRequest()
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        try {
+          var data = JSON.parse(xhr.responseText || '{}')
+          if (data && data.config && data.config.autogoldhen === false) {
+            autoGoldhen = false
+          }
+        } catch (e) { /* default: GoldHEN on */ }
+        fetchManifest()
+      }
+    }
+    try {
+      xhr.open('GET', 'file://../download0/config.json', true)
+      xhr.send()
+    } catch (e) { fetchManifest() }
+  }
+
   initUI()
-  fetchManifest()
+  loadSwitch()
 })()

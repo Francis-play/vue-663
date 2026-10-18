@@ -36,6 +36,7 @@ declare var CONFIG: {
   autorelapse?: boolean;
   autoclose?: boolean;
   autoclose_delay?: number;
+  autogoldhen?: boolean;
   jb_behavior?: number;
   theme?: string;
   music?: boolean;

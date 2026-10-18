@@ -1,6 +1,6 @@
 import { libc_addr } from 'download0/userland'
 import { lang, useImageText, textImageBase } from 'download0/languages'
-import { fn, mem, BigInt } from 'download0/types'
+import { fn, mem, BigInt, utils } from 'download0/types'
 
 if (typeof libc_addr === 'undefined') {
   include('userland.js')
@@ -43,6 +43,7 @@ if (typeof lang === 'undefined') {
     autorelapse: boolean
     autoclose: boolean
     autoclose_delay: number
+    autogoldhen: boolean
     music: boolean
     jb_behavior: number
     theme: string
@@ -52,6 +53,7 @@ if (typeof lang === 'undefined') {
     autorelapse: false,
     autoclose: false,
     autoclose_delay: 0,
+    autogoldhen: true,
     music: true,
     jb_behavior: 0,
     theme: 'default'
@@ -178,6 +180,7 @@ if (typeof lang === 'undefined') {
     { key: 'autopoop', label: lang.autoPoop, imgKey: 'autoPoop', type: 'toggle' },
     { key: 'autorelapse', label: lang.autoRelapse, imgKey: 'autoRelapse', type: 'toggle' },
     { key: 'autoclose', label: lang.autoClose, imgKey: 'autoClose', type: 'toggle' },
+    { key: 'autogoldhen', label: lang.autoGoldhen, imgKey: 'autoGoldhen', type: 'toggle' },
     { key: 'music', label: lang.music, imgKey: 'music', type: 'toggle' },
     { key: 'jb_behavior', label: lang.jbBehavior, imgKey: 'jbBehavior', type: 'cycle' },
     { key: 'theme', label: lang.theme || 'Theme', imgKey: 'theme', type: 'cycle' }
@@ -445,6 +448,7 @@ if (typeof lang === 'undefined') {
         autorelapse: currentConfig.autorelapse,
         autoclose: currentConfig.autoclose,
         autoclose_delay: currentConfig.autoclose_delay,
+        autogoldhen: currentConfig.autogoldhen,
         music: currentConfig.music,
         jb_behavior: currentConfig.jb_behavior,
         theme: currentConfig.theme
@@ -481,6 +485,7 @@ if (typeof lang === 'undefined') {
           currentConfig.autorelapse = CONFIG.autorelapse || false
           currentConfig.autoclose = CONFIG.autoclose || false
           currentConfig.autoclose_delay = CONFIG.autoclose_delay || 0
+          currentConfig.autogoldhen = CONFIG.autogoldhen !== false
           currentConfig.music = CONFIG.music !== false
           currentConfig.jb_behavior = CONFIG.jb_behavior || 0
 
@@ -532,8 +537,18 @@ if (typeof lang === 'undefined') {
           log(key + ' = ' + currentConfig.theme)
         }
       } else {
-        const boolKey = key as 'autolapse' | 'autopoop' | 'autorelapse' | 'autoclose' | 'music'
+        const boolKey = key as 'autolapse' | 'autopoop' | 'autorelapse' | 'autoclose' | 'autogoldhen' | 'music'
         currentConfig[boolKey] = !currentConfig[boolKey]
+
+        if (boolKey === 'autogoldhen') {
+          if (typeof CONFIG !== 'undefined') {
+            CONFIG.autogoldhen = currentConfig.autogoldhen
+          }
+          if (currentConfig.autogoldhen === false) {
+            utils.notify('GoldHEN auto OFF\nHEN will be loaded at JB')
+          }
+          log('autogoldhen = ' + currentConfig.autogoldhen)
+        }
 
         if (boolKey === 'music') {
           if (typeof CONFIG !== 'undefined') {

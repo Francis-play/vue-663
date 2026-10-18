@@ -10,6 +10,7 @@ export const lang: Record<string, string> = {
   autoPoop: 'Auto Poop',
   autoRelapse: 'Auto Relapse',
   autoClose: 'Auto Close',
+  autoGoldhen: 'Auto GoldHEN',
   music: 'Music',
   jbBehavior: 'JB Behavior',
   jbBehaviorAuto: 'Auto Detect',

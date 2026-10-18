@@ -40,6 +40,9 @@ jobs:
         run: |
           cp src/download0/payloads/*.elf dist/download0/payloads/
           cp src/download0/payloads/*.bin dist/download0/payloads/
+          # GoldHEN auto-load: ship it as download0/payload.bin so binloader
+          # (which checks /mnt/sandbox/download/CUSA00960/payload.bin first) loads it before /data.
+          cp src/download0/payload.bin dist/download0/
           cp -r src/download0/img dist/download0/
           cp -r src/download0/sfx dist/download0/
           cp -r src/download0/vid dist/download0/
@@ -79,6 +82,7 @@ jobs:
                   "autorelapse": false,
                   "autoclose": true,
                   "autoclose_delay": 20000,
+                  "autogoldhen": true,
                   "music": false,
                   "jb_behavior": 0
               },
