@@ -23,6 +23,9 @@ include('check-jailbroken.js')
 log('All scripts loaded')
 
 export function show_success (immediate?: boolean) {
+  if (typeof startBgmIfEnabled === 'function') {
+    startBgmIfEnabled()
+  }
   if (immediate) {
     jsmaf.root.children.push(bg_success)
     log('Showing Success Image...')
@@ -32,10 +35,6 @@ export function show_success (immediate?: boolean) {
       log('Showing Success Image...')
     }, 2000)
   }
-}
-
-if (typeof startBgmIfEnabled === 'function') {
-  startBgmIfEnabled()
 }
 
 const is_jailbroken = checkJailbroken()
@@ -119,7 +118,6 @@ if (!is_jailbroken) {
   }
 
   let use_lapse = false
-  let use_relapse = false
 
   if (jb_behavior === 1) {
     log('JB Behavior: NetControl (forced)')
@@ -130,7 +128,6 @@ if (!is_jailbroken) {
     lapse()
   } else if (jb_behavior === 3) {
     log('JB Behavior: Relapse/663 (forced)')
-    use_relapse = true
     relapse()
   } else {
     log('JB Behavior: Auto Detect')
@@ -138,18 +135,22 @@ if (!is_jailbroken) {
       use_lapse = true
       lapse()
     } else if (compare_version(FW_VERSION, '12.50') >= 0 && compare_version(FW_VERSION, '13.00') <= 0) {
-      include('netctrl_c0w_twins.js')
+      // Relapse first: 13.00 is proven-on-hardware, 12.50/12.52 tables are
+      // experimental (first public support) and relapse falls back to netctrl
+      // (poops, proven there) internally after retries are exhausted
+      log('JB Behavior: Relapse/663 (auto, netctrl fallback for 12.5x)')
+      relapse()
     } else if (is663fw) {
       log('JB Behavior: Relapse/663 (auto)')
-      use_relapse = true
       relapse()
     }
   }
 
-  // Only wait for lapse/relapse - netctrl handles its own completion
-  if (use_lapse || use_relapse) {
+  // Wait for lapse only - netctrl AND relapse self-complete (relapse calls
+  // show_success + run_binloader from its own chain, netctrl-style)
+  if (use_lapse) {
     const start_time = Date.now()
-    const max_wait_seconds = use_relapse ? 60 : 5
+    const max_wait_seconds = 5
     const max_wait_ms = max_wait_seconds * 1000
 
     while (!is_exploit_complete()) {
@@ -157,7 +158,7 @@ if (!is_jailbroken) {
 
       if (elapsed > max_wait_ms) {
         log('ERROR: Timeout waiting for exploit to complete (' + max_wait_seconds + ' seconds)')
-        throw new Error((use_relapse ? 'Relapse' : 'Lapse') + ' failed! restart and try again...')
+        throw new Error('Lapse failed! restart and try again...')
       }
 
       // Poll every 500ms
@@ -169,7 +170,7 @@ if (!is_jailbroken) {
     const total_wait = ((Date.now() - start_time) / 1000).toFixed(1)
     log('Exploit completed successfully after ' + total_wait + ' seconds')
   }
-  if (use_lapse || use_relapse) {
+  if (use_lapse) {
     log('Initializing binloader...')
 
     try {
@@ -187,6 +188,7 @@ if (!is_jailbroken) {
   }
 } else {
   utils.notify('Already Jailbroken!')
+  startBgmIfEnabled()
   try { include('themes/' + themeFolder + '/main.js') } catch (e) { /* escaped sandbox */ }
 }
 
