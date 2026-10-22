@@ -49,6 +49,12 @@ jobs:
           cp src/download0/*.aes dist/download0/
           cp src/download0/config.json dist/download0/
 
+      - name: Check ftp/updater.js sync (non-blocking)
+        run: |
+          if ! diff <(tr -d '[:space:]' < ftp/updater.js) <(tr -d '[:space:]' < dist/download0/payloads/updater.js) > /dev/null 2>&1; then
+            echo "::warning::ftp/updater.js is out of sync with dist/download0/payloads/updater.js - regenerate it (cp dist/download0/payloads/updater.js ftp/updater.js)"
+          fi
+
       - name: Generate manifest
         run: |
           cd dist/download0
@@ -206,11 +212,14 @@ jobs:
       - name: Verify image
         run: file download0.dat
 
+      - name: Zip UFS2 image
+        run: zip download0_dat_uf2.zip download0.dat
+
       - name: Upload UFS2 image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: download0.dat
-          path: download0.dat
+          name: download0_dat_uf2.zip
+          path: download0_dat_uf2.zip
 
       - name: Delete dist artifact
         uses: geekyeggo/delete-artifact@v5
@@ -221,7 +230,7 @@ jobs:
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: download0.dat
+          files: download0_dat_uf2.zip
 
   ufs-image-lite:
     needs: build
