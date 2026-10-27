@@ -6,10 +6,18 @@ import { relapse } from 'download0/relapse'
 import { binloader_init } from 'download0/binloader'
 import { checkJailbroken } from 'download0/check-jailbroken'
 
-if (jsmaf.loader_has_run) {
-  throw new Error('loader already ran')
+// ---------------------------------------------------------------------------
+// Re-press guard (menu "Jailbreak" can be pressed again while the menu is
+// already active). NEVER throw here: an uncaught top-level throw used to
+// freeze the app with the key handler already disabled.
+// ---------------------------------------------------------------------------
+const loader_already_ran = !!jsmaf.loader_has_run
+if (loader_already_ran) {
+  log('[loader] Jailbreak re-press ignored: loader already ran this session')
+  try { utils.notify('Vue already initialized — use Payload Menu / Config') } catch (e) { /* notify optional */ }
+} else {
+  jsmaf.loader_has_run = true
 }
-jsmaf.loader_has_run = true
 
 // Now load userland and lapse
 // Check if libc_addr is defined
@@ -21,8 +29,11 @@ include('lapse.js')
 include('kernel.js')
 include('check-jailbroken.js')
 log('All scripts loaded')
+// identify the exact build in every report (update on each release)
+log('[vue-663 build] diag-build-2026-10-23 (relapse-12.5x watchdog + jb-probe + menu guard)')
 
 export function show_success (immediate?: boolean) {
+  jsmaf.vue_exploit_done = true
   if (typeof startBgmIfEnabled === 'function') {
     startBgmIfEnabled()
   }
@@ -37,7 +48,6 @@ export function show_success (immediate?: boolean) {
   }
 }
 
-const is_jailbroken = checkJailbroken()
 const themeFolder = (typeof CONFIG !== 'undefined' && typeof CONFIG.theme === 'string') ? CONFIG.theme : 'default'
 
 // Check if exploit has completed successfully
@@ -86,13 +96,6 @@ function get_fwversion () {
   return null
 }
 
-const FW_VERSION: string | null = get_fwversion()
-
-if (FW_VERSION === null) {
-  log('ERROR: Failed to determine FW version')
-  throw new Error('Failed to determine FW version')
-}
-
 const compare_version = (a: string, b: string) => {
   const a_arr = a.split('.')
   const amaj = Number(a_arr[0])
@@ -103,93 +106,157 @@ const compare_version = (a: string, b: string) => {
   return amaj === bmaj ? amin - bmin : amaj - bmaj
 }
 
-if (!is_jailbroken) {
-  const jb_behavior = (typeof CONFIG !== 'undefined' && typeof CONFIG.jb_behavior === 'number') ? CONFIG.jb_behavior : 0
-
-  utils.notify(FW_VERSION + ' Detected!')
-
-  // 13.02/13.04 testers: autoclose on with HEN-safe delay even if config.json is old
-  const is663fw = FW_VERSION === '13.02' || FW_VERSION === '13.04'
-  if (is663fw && typeof CONFIG !== 'undefined') {
-    CONFIG.autoclose = true
-    if (typeof CONFIG.autoclose_delay !== 'number' || CONFIG.autoclose_delay < 20000) {
-      CONFIG.autoclose_delay = 20000
+// ---------------------------------------------------------------------------
+// Relapse watchdog -> Netctrl fallback (12.50/12.52 only)
+//
+// relapse_fail() already falls back to netctrl when it *fails* cleanly, but
+// if the relapse chain stalls (setup/saturate hang with the event loop still
+// alive) nothing happens. This watchdog monitors relapse's activity marks
+// (relapse.ts mark() refreshes jsmaf.relapse_activity) and forces the
+// netctrl include when relapse stops progressing.
+// ---------------------------------------------------------------------------
+function arm_relapse_watchdog (fw: string) {
+  const started = Date.now()
+  jsmaf.relapse_activity = started
+  let done = false
+  const id = jsmaf.setInterval(function () {
+    if (done || jsmaf.vue_exploit_done || is_exploit_complete()) {
+      done = true
+      jsmaf.clearInterval(id)
+      return
     }
-  }
-
-  let use_lapse = false
-
-  if (jb_behavior === 1) {
-    log('JB Behavior: NetControl (forced)')
-    include('netctrl_c0w_twins.js')
-  } else if (jb_behavior === 2) {
-    log('JB Behavior: Lapse (forced)')
-    use_lapse = true
-    lapse()
-  } else if (jb_behavior === 3) {
-    log('JB Behavior: Relapse/663 (forced)')
-    relapse()
-  } else {
-    log('JB Behavior: Auto Detect')
-    if (compare_version(FW_VERSION, '7.00') >= 0 && compare_version(FW_VERSION, '12.02') <= 0) {
-      use_lapse = true
-      lapse()
-    } else if (compare_version(FW_VERSION, '12.50') >= 0 && compare_version(FW_VERSION, '13.00') <= 0) {
-      // Relapse first: 13.00 is proven-on-hardware, 12.50/12.52 tables are
-      // experimental (first public support) and relapse falls back to netctrl
-      // (poops, proven there) internally after retries are exhausted
-      log('JB Behavior: Relapse/663 (auto, netctrl fallback for 12.5x)')
-      relapse()
-    } else if (is663fw) {
-      log('JB Behavior: Relapse/663 (auto)')
-      relapse()
-    }
-  }
-
-  // Wait for lapse only - netctrl AND relapse self-complete (relapse calls
-  // show_success + run_binloader from its own chain, netctrl-style)
-  if (use_lapse) {
-    const start_time = Date.now()
-    const max_wait_seconds = 5
-    const max_wait_ms = max_wait_seconds * 1000
-
-    while (!is_exploit_complete()) {
-      const elapsed = Date.now() - start_time
-
-      if (elapsed > max_wait_ms) {
-        log('ERROR: Timeout waiting for exploit to complete (' + max_wait_seconds + ' seconds)')
-        throw new Error('Lapse failed! restart and try again...')
-      }
-
-      // Poll every 500ms
-      const poll_start = Date.now()
-      while (Date.now() - poll_start < 500) {
-        // Busy wait
+    const act = jsmaf.relapse_activity || started
+    const idle = Date.now() - act
+    if (idle >= 30000) {
+      done = true
+      jsmaf.clearInterval(id)
+      log('[watchdog] relapse stalled for ' + idle + 'ms on fw=' + fw + ' -> netctrl fallback')
+      try { utils.notify('Relapse stalled — trying NetControl...') } catch (e) { /* optional */ }
+      try {
+        include('netctrl_c0w_twins.js')
+      } catch (e2) {
+        log('[watchdog] netctrl include failed: ' + (e2 as Error).message)
       }
     }
-    const total_wait = ((Date.now() - start_time) / 1000).toFixed(1)
-    log('Exploit completed successfully after ' + total_wait + ' seconds')
-  }
-  if (use_lapse) {
-    log('Initializing binloader...')
+  }, 5000)
+  log('[watchdog] armed (30s stall -> netctrl fallback), fw=' + fw)
+}
 
-    try {
-      binloader_init()
-      log('Binloader initialized and running!')
-    } catch (e) {
-      log('ERROR: Failed to initialize binloader')
-      log('Error message: ' + (e as Error).message)
-      log('Error name: ' + (e as Error).name)
-      if ((e as Error).stack) {
-        log('Stack trace: ' + (e as Error).stack)
-      }
-      throw e
+// ---------------------------------------------------------------------------
+// Main flow — wrapped so ANY failure notifies instead of freezing the app
+// with a silent top-level throw.
+// ---------------------------------------------------------------------------
+if (!loader_already_ran) {
+  try {
+    const is_jailbroken = checkJailbroken()
+    const FW_VERSION: string | null = get_fwversion()
+
+    if (FW_VERSION === null) {
+      log('ERROR: Failed to determine FW version')
+      throw new Error('Failed to determine FW version')
     }
+
+    if (!is_jailbroken) {
+      const jb_behavior = (typeof CONFIG !== 'undefined' && typeof CONFIG.jb_behavior === 'number') ? CONFIG.jb_behavior : 0
+
+      utils.notify(FW_VERSION + ' Detected!')
+
+      // 13.02/13.04 testers: autoclose on with HEN-safe delay even if config.json is old
+      const is663fw = FW_VERSION === '13.02' || FW_VERSION === '13.04'
+      if (is663fw && typeof CONFIG !== 'undefined') {
+        CONFIG.autoclose = true
+        if (typeof CONFIG.autoclose_delay !== 'number' || CONFIG.autoclose_delay < 20000) {
+          CONFIG.autoclose_delay = 20000
+        }
+      }
+
+      // 12.50/12.52: relapse is experimental (no kernel dump) — arm the
+      // stall watchdog so a hanging setup still ends in netctrl (proven).
+      const is125x = compare_version(FW_VERSION, '12.50') >= 0 && compare_version(FW_VERSION, '12.52') <= 0
+
+      let use_lapse = false
+
+      if (jb_behavior === 1) {
+        log('JB Behavior: NetControl (forced)')
+        include('netctrl_c0w_twins.js')
+      } else if (jb_behavior === 2) {
+        log('JB Behavior: Lapse (forced)')
+        use_lapse = true
+        lapse()
+      } else if (jb_behavior === 3) {
+        log('JB Behavior: Relapse/663 (forced)')
+        if (is125x) arm_relapse_watchdog(FW_VERSION)
+        relapse()
+      } else {
+        log('JB Behavior: Auto Detect')
+        if (compare_version(FW_VERSION, '7.00') >= 0 && compare_version(FW_VERSION, '12.02') <= 0) {
+          use_lapse = true
+          lapse()
+        } else if (compare_version(FW_VERSION, '12.50') >= 0 && compare_version(FW_VERSION, '13.00') <= 0) {
+          // Relapse first: 13.00 is proven-on-hardware, 12.50/12.52 tables are
+          // experimental (first public support) and relapse falls back to netctrl
+          // (poops, proven there) internally after retries are exhausted
+          log('JB Behavior: Relapse/663 (auto, netctrl fallback for 12.5x)')
+          if (is125x) arm_relapse_watchdog(FW_VERSION)
+          relapse()
+        } else if (is663fw) {
+          log('JB Behavior: Relapse/663 (auto)')
+          relapse()
+        }
+      }
+
+      // Wait for lapse only - netctrl AND relapse self-complete (relapse calls
+      // show_success + run_binloader from its own chain, netctrl-style)
+      if (use_lapse) {
+        const start_time = Date.now()
+        const max_wait_seconds = 5
+        const max_wait_ms = max_wait_seconds * 1000
+
+        while (!is_exploit_complete()) {
+          const elapsed = Date.now() - start_time
+
+          if (elapsed > max_wait_ms) {
+            log('ERROR: Timeout waiting for exploit to complete (' + max_wait_seconds + ' seconds)')
+            throw new Error('Lapse failed! restart and try again...')
+          }
+
+          // Poll every 500ms
+          const poll_start = Date.now()
+          while (Date.now() - poll_start < 500) {
+            // Busy wait
+          }
+        }
+        const total_wait = ((Date.now() - start_time) / 1000).toFixed(1)
+        log('Exploit completed successfully after ' + total_wait + ' seconds')
+      }
+      if (use_lapse) {
+        log('Initializing binloader...')
+
+        try {
+          binloader_init()
+          log('Binloader initialized and running!')
+        } catch (e) {
+          log('ERROR: Failed to initialize binloader')
+          log('Error message: ' + (e as Error).message)
+          log('Error name: ' + (e as Error).name)
+          if ((e as Error).stack) {
+            log('Stack trace: ' + (e as Error).stack)
+          }
+          throw e
+        }
+      }
+    } else {
+      utils.notify('Already Jailbroken!')
+      startBgmIfEnabled()
+      try { include('themes/' + themeFolder + '/main.js') } catch (e) { /* escaped sandbox */ }
+    }
+  } catch (e) {
+    // Any failure in the flow: notify on screen instead of dying silently
+    // (the menu re-press handler restores input on its own catch as well).
+    log('[loader] FATAL: ' + (e as Error).message)
+    if ((e as Error).stack) log('[loader] stack: ' + (e as Error).stack)
+    try { utils.notify('Vue error: ' + (e as Error).message + ' — reopen Vue') } catch (e2) { /* optional */ }
   }
-} else {
-  utils.notify('Already Jailbroken!')
-  startBgmIfEnabled()
-  try { include('themes/' + themeFolder + '/main.js') } catch (e) { /* escaped sandbox */ }
 }
 
 export function run_binloader () {

@@ -39,6 +39,27 @@ Sin jailbreak no se puede instalar el pkg de Vue, asi que el orden es:
 
 ---
 
+## Diagnóstico 12.52 (reporte de fallo con relapse)
+
+Si Vue se congela o falla en 12.52, esta guia nos da la historia completa en **una sola pasada**. Necesitas: USB (MBR + exFAT) y los dos payloads `vue_applog.elf` y `vue_kdump.elf` (estan en `src/download0/payloads/` del repo).
+
+**Orden importante: NO hagas jailbreak con BD-J ni reinicies antes de los pasos 3-4** — si la consola ya esta "already jailbroken", Vue no corre el exploit y no hay nada que diagnosticar.
+
+1. Arranca la consola, abre Vue (sin jailbreak previo) y presiona **Jailbreak**. En 12.52 veras: primero `[relapse:...]`; o bien se queda sin avanzar y a los ~30s aparece **"Relapse stalled — trying NetControl..."** (el watchdog lo manda a NetControl solo); o falla limpio con "Relapse failed".
+2. Deja el resultado como este (aunque este "congelada" la app) **sin apagar ni reiniciar**.
+3. Carga `vue_applog.elf` (payload loader de GoldHEN o netcat a puerto 9020). Espera ~10 s.
+4. Carga `vue_kdump.elf`. Espera ~30 s.
+5. Apaga la consola del todo, saca el USB.
+
+Quedan en la raiz del USB: **`vue_diag.tar`** (config real de Vue + logs/sandbox de la sesión) y **`kernel.elf`** (dump del kernel de 12.52). Mandanos esos dos archivos.
+
+- `vue_diag.tar` se abre con cualquier 7-zip/WinRAR (es un .tar).
+- `kernel.elf` es para validar los offsets de 12.52 (IDT/sysctl/AIO) — nos lo puede mandar quien lo obtenga primero.
+
+Si no podes cargar los payloads tras el fallo: cerra Vue (boton PS -> cerrar), cargalos igual y mandalos — perdemos los logs en vivo pero la config y el kernel dump salen completos.
+
+---
+
 ## Para reportar (copia y pega esto)
 
 FW: 13.02 / 13.04 (Fat/Slim/Pro):

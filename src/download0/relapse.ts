@@ -184,6 +184,8 @@ const MAIN_RTPRIO = 0x100
 // ---------------------------------------------------------------------------
 function mark (tag: string, detail?: string) {
   const msg = detail ? '[relapse:' + tag + '] ' + detail : '[relapse:' + tag + ']'
+  // feed the loader watchdog: any mark proves the chain is alive
+  try { jsmaf.relapse_activity = Date.now() } catch (e) { /* optional */ }
   log(msg)
   try {
     const w = (typeof ws !== 'undefined' ? ws : null) as unknown as Record<string, unknown>
@@ -691,6 +693,9 @@ function mSaturate () {
     put64(brqDv, o + 0x10, brbAd)
     putN(brqDv, o + 0x20, bsp0)
   }
+  // mark BEFORE the blocking submit: if the kernel hangs inside
+  // aio_submit_cmd on a given fw, this is the last visible line
+  mark('PR-SATURATE-ENTER', 'aio_submit_cmd blocking=' + NBLOCK + ' prio=3')
   const rs0 = aio_submit_cmd(1 | 0x1000, bufAddr(brqAb), NBLOCK, 3, bufAddr(bidAb))
   trace('PR-SATURATE', 'blocking_submitted=' + NBLOCK + ' rs=' + Number(rs0.lo))
   mark('PR-SATURATE', 'blocking=' + NBLOCK + ' prio=3 state=SUBMITTED')

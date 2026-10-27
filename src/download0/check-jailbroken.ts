@@ -6,7 +6,12 @@ export function checkJailbroken (): boolean {
 
   const uidBefore = fn.getuid()
   const uidBeforeVal = uidBefore instanceof BigInt ? uidBefore.lo : uidBefore
-  log('UID before setuid: ' + uidBeforeVal)
+  log('UID: ' + uidBeforeVal)
+
+  if (uidBeforeVal === 0) {
+    log('UID is already 0 — already jailbroken (skipping setuid probe)')
+    return true
+  }
 
   log('Attempting setuid(0)...')
 
@@ -20,7 +25,6 @@ export function checkJailbroken (): boolean {
 
   const uidAfter = fn.getuid()
   const uidAfterVal = uidAfter instanceof BigInt ? uidAfter.lo : uidAfter
-  log('UID after setuid: ' + uidAfterVal)
 
   const jailbroken = uidAfterVal === 0
   log(jailbroken ? 'Already jailbroken' : 'Not jailbroken')

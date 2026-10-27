@@ -1,6 +1,6 @@
 import { lang, useImageText, textImageBase } from 'download0/languages'
 import { libc_addr } from 'download0/userland'
-import { fn, BigInt } from 'download0/types'
+import { fn, BigInt, utils } from 'download0/types'
 
 (function () {
   include('languages.js')
@@ -278,6 +278,19 @@ import { fn, BigInt } from 'download0/types'
     } else if (currentButton < menuOptions.length) {
       const selectedOption = menuOptions[currentButton]
       if (!selectedOption) return
+
+      // Jailbreak re-press: loader already ran this session. Never disable
+      // input and never re-include loader.js (its re-press guard would just
+      // ignore it — this only avoids killing the key handler).
+      if (selectedOption.script === 'loader.js' && jsmaf.loader_has_run) {
+        log('[menu] Jailbreak re-press ignored: loader already ran')
+        try { utils.notify('Vue already initialized — use Payload Menu / Config') } catch (e) { /* optional */ }
+        return
+      }
+
+      // Save the current key handler so a loader failure can restore input
+      // (previously input stayed disabled forever -> looked like a freeze).
+      const prevKeyHandler = jsmaf.onKeyDown
       if (selectedOption.script === 'loader.js') {
         jsmaf.onKeyDown = function () {}
       }
@@ -291,6 +304,9 @@ import { fn, BigInt } from 'download0/types'
       } catch (e) {
         log('ERROR loading ' + selectedOption.script + ': ' + (e as Error).message)
         if ((e as Error).stack) log((e as Error).stack!)
+        // restore input — the app must stay usable after a failed launch
+        jsmaf.onKeyDown = prevKeyHandler
+        try { utils.notify('Failed to start ' + selectedOption.script) } catch (e2) { /* optional */ }
       }
     }
   }
