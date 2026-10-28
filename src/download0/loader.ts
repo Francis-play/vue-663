@@ -69,6 +69,13 @@ function is_exploit_complete () {
   return true
 }
 
+// relapse.js is not part of the boot include chain: load it on first use
+// (keeps the 65KB parse out of the Lapse/Netctrl paths).
+function start_relapse () {
+  if (typeof relapse === 'undefined') include('relapse.js')
+  relapse()
+}
+
 function write64 (addr: BigInt, val: BigInt | number) {
   mem.view(addr).setBigInt(0, new BigInt(val), true)
 }
@@ -186,7 +193,7 @@ if (!loader_already_ran) {
       } else if (jb_behavior === 3) {
         log('JB Behavior: Relapse/663 (forced)')
         if (is125x) arm_relapse_watchdog(FW_VERSION)
-        relapse()
+        start_relapse()
       } else {
         log('JB Behavior: Auto Detect')
         if (compare_version(FW_VERSION, '7.00') >= 0 && compare_version(FW_VERSION, '12.02') <= 0) {
@@ -198,10 +205,10 @@ if (!loader_already_ran) {
           // (poops, proven there) internally after retries are exhausted
           log('JB Behavior: Relapse/663 (auto, netctrl fallback for 12.5x)')
           if (is125x) arm_relapse_watchdog(FW_VERSION)
-          relapse()
+          start_relapse()
         } else if (is663fw) {
           log('JB Behavior: Relapse/663 (auto)')
-          relapse()
+          start_relapse()
         }
       }
 
