@@ -188,7 +188,6 @@ jobs:
         
   ufs-image:
     needs: build
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download dist artifact
@@ -256,7 +255,6 @@ jobs:
 
   ufs-image-lite:
     needs: build
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download lite dist artifact
