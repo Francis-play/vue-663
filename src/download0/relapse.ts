@@ -450,6 +450,8 @@ function cleanup (final: boolean) {
 
 function relapse_fail (reason: string, benign: boolean) {
   if (relapse_dead) return
+  // MAX_RETRIES = total attempts (1 initial + retries); relapse_tries is the
+  // attempt that just failed, so a retry is allowed while it fits the budget.
   if (benign && relapse_tries < MAX_RETRIES) {
     relapse_tries++
     // IDT hypothesis swap for 12.50/12.52 after the first benign failure:
@@ -458,7 +460,8 @@ function relapse_fail (reason: string, benign: boolean) {
       K_TABLE = Object.assign({}, K_TABLE, { idt_rsvd: idt_alt })
       mark('IDT-ALT', 'idt_rsvd -> 0x' + (idt_alt as number).toString(16) + ' (13.00 anchor gate)')
     }
-    mark('BENIGN-RETRY', reason + ' try=' + relapse_tries + '/' + MAX_RETRIES + ' -> relapse_setup()')
+    mark('BENIGN-RETRY', reason + ' try=' + relapse_tries + '/' + MAX_RETRIES +
+      ' idt=0x' + (K_TABLE ? K_TABLE.idt_rsvd.toString(16) : '?') + ' -> relapse_setup()')
     cleanup(false)
     relapse_setup()
     return
@@ -1371,7 +1374,9 @@ function relapse_anchor_head () {
     }
   }
   if (!check('anchor-every-byte-unique', bad === 0, 'nomatch=' + bad + ' jobs=' + NJ)) {
-    relapse_fail('anchor decode', false)
+    // IDT hypothesis failure: retry (benign) so the next attempt can swap
+    // idt_rsvd to the 13.00 neighbour (IDT-ALT) instead of failing outright.
+    relapse_fail('anchor decode', true)
     return
   }
   check('anchor-duplicates-agree', B.b6 === B.b6d && B.b7 === B.b7d, 'b6=' + B.b6 + ' b6d=' + B.b6d + ' b7=' + B.b7 + ' b7d=' + B.b7d)
@@ -1382,7 +1387,8 @@ function relapse_anchor_head () {
   const kbAligned = (kbLo & 0x3fff) === 0
   check('ANCHOR-KERNEL-BASE', kbAligned, 'kernel_base=' + hex(KBASE as BigInt) + ' aligned0x4000=' + (kbAligned ? 1 : 0) + ' low=0x' + kbLo.toString(16))
   if (!kbAligned) {
-    relapse_fail('kernel base not aligned', false)
+    // Same IDT hypothesis failure as above: retry with the alternate gate.
+    relapse_fail('kernel base not aligned', true)
     return
   }
   yield_to_render(relapse_rw)
