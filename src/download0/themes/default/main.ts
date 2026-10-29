@@ -10,7 +10,8 @@ import { fn, BigInt, mem, utils } from 'download0/types'
 import { kernel } from 'download0/kernel'
 
 ;(function () {
-  const MAX_LINES = 22
+  const MAX_LINES = 20
+  const MAX_HISTORY = 800
   const LINE_COLS = 146
   const BUILD = 'diag-build-2026-10-23'
   const O_WRONLY = 1
@@ -24,6 +25,7 @@ import { kernel } from 'download0/kernel'
 
   const board = {
     lines: [] as string[],
+    history: [] as string[],
     started: Date.now(),
     loaderDone: false,
     loaderMs: 0,
@@ -43,6 +45,8 @@ import { kernel } from 'download0/kernel'
   const nativeLog = (typeof log === 'function') ? log : null
   function pushLine (raw: string) {
     const msg = String(raw)
+    board.history.push(msg)
+    if (board.history.length > MAX_HISTORY) board.history.shift()
     for (let i = 0; i < msg.length; i += LINE_COLS) {
       board.lines.push(msg.slice(i, i + LINE_COLS))
       if (board.lines.length > MAX_LINES) board.lines.shift()
@@ -114,12 +118,26 @@ import { kernel } from 'download0/kernel'
     s3: mkText(60, 180, 'dbg-mid'),
     sep: mkText(60, 220, 'dbg-small'),
     log: [] as jsmaf.Text[],
+    why: mkText(60, 905, 'dbg-mid'),
     dump: mkText(60, 992, 'dbg-mid'),
     foot: mkText(60, 1036, 'dbg-small')
   }
   for (let i = 0; i < MAX_LINES; i++) ui.log.push(mkText(60, 250 + i * 33, 'dbg-body'))
   ui.sep.text = '----------------------------------------------------------------------------------------------------------------------------------------------------'
   ui.title.text = 'VUE DEBUG — BLACKBOARD (' + BUILD + ')'
+
+  const RELAPSE_TAGS = ['[relapse:FAIL-FINAL]', '[relapse:NETCTRL-FALLBACK]', '[relapse:BENIGN-RETRY]', '[relapse:IDT-ALT]', '[relapse:ANCHOR-PLAN]', '[relapse:KERNEL-OFFSET-FAIL]']
+  const NETCTRL_TAGS = ['[netctrl] leak_kqueue_fdp FAIL', '[netctrl]', 'netctrl failed', 'Failed to']
+
+  function lastMatch (tags: string[]) {
+    for (let i = board.history.length - 1; i >= 0; i--) {
+      const l = board.history[i]!
+      for (const t of tags) {
+        if (l.indexOf(t) >= 0) return l.replace(/^\[[^\]]+\]\s*/, '').slice(0, 110)
+      }
+    }
+    return ''
+  }
 
   function knobLine () {
     try {
@@ -156,6 +174,9 @@ import { kernel } from 'download0/kernel'
     ui.s2.text = 'path ' + (path || '-') + '   phase ' + (phase || '-') + '   idle ' + idle + 's   t ' + elapsed + 's'
     ui.s3.text = 'kbase ' + (kbase || '(pendiente)') + (logPatched ? '   log-capture ON' : '   log-capture OFF')
     ui.dump.text = board.dump
+    const whyRel = lastMatch(RELAPSE_TAGS)
+    const whyNc = lastMatch(NETCTRL_TAGS)
+    ui.why.text = 'why: relapse=' + (whyRel || '-') + ' | netctrl=' + (whyNc || '-')
     ui.foot.text = 'loader ' + (board.loaderDone ? 'returned in ' + board.loaderMs.toFixed(1) + 's' : 'running/blocked') + '   stop with PS button' + knobLine()
     for (let i = 0; i < MAX_LINES; i++) {
       const n = board.lines.length
@@ -243,7 +264,7 @@ import { kernel } from 'download0/kernel'
           'kbase: ' + (kbase || '-') + '\n' +
           'loader_ms: ' + board.loaderMs.toFixed(1) + '\n' +
           'log:\n'
-        writeStr(fd.lo >>> 0, head + board.lines.join('\n') + '\n')
+        writeStr(fd.lo >>> 0, head + board.history.join('\n') + '\n')
         closeSys(fd.lo >>> 0)
         board.dump = 'DUMP: log saved to ' + dir + '/vue_debug.txt'
         return dir
