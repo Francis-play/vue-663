@@ -7,7 +7,7 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: [main, debug-blackboard]
   release:
     types: [created]
   workflow_dispatch:
@@ -163,6 +163,7 @@ jobs:
 
   deploy-pages:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     environment:
@@ -187,6 +188,7 @@ jobs:
         
   ufs-image:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download dist artifact
@@ -254,6 +256,7 @@ jobs:
 
   ufs-image-lite:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download lite dist artifact
