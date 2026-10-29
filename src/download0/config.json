@@ -8,7 +8,12 @@
         "autogoldhen": true,
         "music": true,
         "jb_behavior": 0,
-        "theme": "default"
+        "theme": "default",
+        "nc_main_loop": 3,
+        "nc_triplefree": 8,
+        "nc_kqueue_iters": 5000,
+        "nc_kqueue_yield": 1,
+        "nc_magic": 21168128
     },
     "payloads": []
 }

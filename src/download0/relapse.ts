@@ -476,6 +476,7 @@ function relapse_fail (reason: string, benign: boolean) {
   // Experimental 12.50/12.52: fall back to netctrl (poops), proven there
   if ((FW_VERSION === '12.50' || FW_VERSION === '12.52') && typeof include === 'function') {
     mark('NETCTRL-FALLBACK', 'relapse exhausted, falling back to netctrl')
+    try { jsmaf.exploit_path = 'netctrl(fallback)' } catch (e) { /* optional */ }
     try {
       utils.notify('Trying NetControl fallback...')
       include('netctrl_c0w_twins.js')

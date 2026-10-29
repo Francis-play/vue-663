@@ -58,6 +58,15 @@ import { kernel } from 'download0/kernel'
       logPatched = (globalThis as unknown as Record<string, unknown>).log !== nativeLog
     } catch (e) { /* log stays native */ }
   }
+  const nativeDebug = (typeof debug === 'function') ? debug : null
+  if (nativeDebug !== null) {
+    try {
+      ;(globalThis as unknown as Record<string, unknown>).debug = function (msg: string) {
+        pushLine(msg)
+        nativeDebug(msg)
+      }
+    } catch (e) { /* debug stays native */ }
+  }
 
   // --- tiny kernel display helpers -------------------------------------------
   function hex64 (v: BigInt) {
@@ -112,6 +121,19 @@ import { kernel } from 'download0/kernel'
   ui.sep.text = '----------------------------------------------------------------------------------------------------------------------------------------------------'
   ui.title.text = 'VUE DEBUG — BLACKBOARD (' + BUILD + ')'
 
+  function knobLine () {
+    try {
+      if (typeof CONFIG === 'undefined') return ''
+      const c = CONFIG as unknown as Record<string, unknown>
+      const g = function (k: string, d: number) {
+        const v = c[k]
+        return typeof v === 'number' && v > 0 ? v : d
+      }
+      return '   knobs loop=' + g('nc_main_loop', 3) + ' kq=' + g('nc_kqueue_iters', 5000) +
+        ' magic=0x' + g('nc_magic', 0x1430000).toString(16) + ' yield=' + g('nc_kqueue_yield', 1)
+    } catch (e) { return '' }
+  }
+
   function render () {
     const fw = (jsmaf as unknown as Record<string, unknown>).fw_version as string | undefined
     const path = (jsmaf as unknown as Record<string, unknown>).exploit_path as string | undefined
@@ -134,7 +156,7 @@ import { kernel } from 'download0/kernel'
     ui.s2.text = 'path ' + (path || '-') + '   phase ' + (phase || '-') + '   idle ' + idle + 's   t ' + elapsed + 's'
     ui.s3.text = 'kbase ' + (kbase || '(pendiente)') + (logPatched ? '   log-capture ON' : '   log-capture OFF')
     ui.dump.text = board.dump
-    ui.foot.text = 'loader ' + (board.loaderDone ? 'returned in ' + board.loaderMs.toFixed(1) + 's' : 'running/blocked') + '   stop with PS button'
+    ui.foot.text = 'loader ' + (board.loaderDone ? 'returned in ' + board.loaderMs.toFixed(1) + 's' : 'running/blocked') + '   stop with PS button' + knobLine()
     for (let i = 0; i < MAX_LINES; i++) {
       const n = board.lines.length
       const line = i < MAX_LINES - n ? '' : board.lines[i - (MAX_LINES - n)]
