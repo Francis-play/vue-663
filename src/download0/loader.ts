@@ -34,6 +34,8 @@ log('[vue-663 build] diag-build-2026-10-23 (relapse-12.5x watchdog + jb-probe + 
 
 export function show_success (immediate?: boolean) {
   jsmaf.vue_exploit_done = true
+  // debug-blackboard branch: the board is the UI, no bg image and no music
+  if (jsmaf.debug_board) return
   if (typeof startBgmIfEnabled === 'function') {
     startBgmIfEnabled()
   }
@@ -166,6 +168,7 @@ if (!loader_already_ran) {
     if (!is_jailbroken) {
       const jb_behavior = (typeof CONFIG !== 'undefined' && typeof CONFIG.jb_behavior === 'number') ? CONFIG.jb_behavior : 0
 
+      jsmaf.fw_version = FW_VERSION
       utils.notify(FW_VERSION + ' Detected!')
 
       // 13.02/13.04 testers: autoclose on with HEN-safe delay even if config.json is old
@@ -185,18 +188,22 @@ if (!loader_already_ran) {
 
       if (jb_behavior === 1) {
         log('JB Behavior: NetControl (forced)')
+        jsmaf.exploit_path = 'netctrl'
         include('netctrl_c0w_twins.js')
       } else if (jb_behavior === 2) {
         log('JB Behavior: Lapse (forced)')
+        jsmaf.exploit_path = 'lapse'
         use_lapse = true
         lapse()
       } else if (jb_behavior === 3) {
         log('JB Behavior: Relapse/663 (forced)')
+        jsmaf.exploit_path = 'relapse'
         if (is125x) arm_relapse_watchdog(FW_VERSION)
         start_relapse()
       } else {
         log('JB Behavior: Auto Detect')
         if (compare_version(FW_VERSION, '7.00') >= 0 && compare_version(FW_VERSION, '12.02') <= 0) {
+          jsmaf.exploit_path = 'lapse'
           use_lapse = true
           lapse()
         } else if (compare_version(FW_VERSION, '12.50') >= 0 && compare_version(FW_VERSION, '13.00') <= 0) {
@@ -204,10 +211,12 @@ if (!loader_already_ran) {
           // experimental (first public support) and relapse falls back to netctrl
           // (poops, proven there) internally after retries are exhausted
           log('JB Behavior: Relapse/663 (auto, netctrl fallback for 12.5x)')
+          jsmaf.exploit_path = 'relapse(125x)'
           if (is125x) arm_relapse_watchdog(FW_VERSION)
           start_relapse()
         } else if (is663fw) {
           log('JB Behavior: Relapse/663 (auto)')
+          jsmaf.exploit_path = 'relapse'
           start_relapse()
         }
       }
@@ -253,9 +262,12 @@ if (!loader_already_ran) {
         }
       }
     } else {
+      jsmaf.exploit_path = 'already-jb'
       utils.notify('Already Jailbroken!')
       startBgmIfEnabled()
-      try { include('themes/' + themeFolder + '/main.js') } catch (e) { /* escaped sandbox */ }
+      if (!jsmaf.debug_board) {
+        try { include('themes/' + themeFolder + '/main.js') } catch (e) { /* escaped sandbox */ }
+      }
     }
   } catch (e) {
     // Any failure in the flow: notify on screen instead of dying silently

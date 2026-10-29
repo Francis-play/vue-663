@@ -186,6 +186,7 @@ function mark (tag: string, detail?: string) {
   const msg = detail ? '[relapse:' + tag + '] ' + detail : '[relapse:' + tag + ']'
   // feed the loader watchdog: any mark proves the chain is alive
   try { jsmaf.relapse_activity = Date.now() } catch (e) { /* optional */ }
+  try { jsmaf.relapse_phase = tag } catch (e) { /* optional */ }
   log(msg)
   try {
     const w = (typeof ws !== 'undefined' ? ws : null) as unknown as Record<string, unknown>
@@ -1755,6 +1756,7 @@ function relapse_rw () {
 
   // --- Assign the kernel API used by jailbreak_shared / payloads ---
   kernel.addr.base = KBASE as BigInt
+  try { jsmaf.kbase = KBASE as BigInt } catch (e) { /* optional */ }
   kernel.read_buffer = function (kaddr: BigInt, length: number): Uint8Array | null {
     if (length < 0 || length > (1 << 20)) return null
     const out = new Uint8Array(length)

@@ -1,329 +1,376 @@
-import { lang, useImageText, textImageBase } from 'download0/languages'
-import { libc_addr } from 'download0/userland'
-import { fn, BigInt, utils } from 'download0/types'
+// ---------------------------------------------------------------------------
+// debug-blackboard theme
+//
+// No menu, no images, no music. On boot it auto-runs the exploit flow
+// (loader.js) and turns the screen into a blackboard: live status, the last
+// captured log lines, and an automatic kernel.elf dump to USB once the
+// console is jailbroken.
+// ---------------------------------------------------------------------------
+import { fn, BigInt, mem, utils } from 'download0/types'
+import { kernel } from 'download0/kernel'
 
-(function () {
-  include('languages.js')
-  log('Loading main menu...')
+;(function () {
+  const MAX_LINES = 22
+  const LINE_COLS = 146
+  const BUILD = 'diag-build-2026-10-23'
+  const O_WRONLY = 1
+  const O_CREAT = 0x200
+  const O_TRUNC = 0x400
+  const USB_IDS = ['0', '1', '2', '3']
+  const DUMP_CHUNK = 0x10000
+  const DUMP_MIN = 0x400000
+  const DUMP_MAX = 0x4800000
+  const DUMP_FALLBACK = 0x2400000
 
-  let currentButton = 0
-  const buttons: Image[] = []
-  const buttonTexts: jsmaf.Text[] = []
-  const buttonMarkers: Image[] = []
-  const buttonOrigPos: { x: number, y: number }[] = []
-  const textOrigPos: { x: number, y: number }[] = []
+  const board = {
+    lines: [] as string[],
+    started: Date.now(),
+    loaderDone: false,
+    loaderMs: 0,
+    dump: 'DUMP: waiting for JB + USB',
+    dumping: false,
+    dumpDone: false,
+    usb: null as string | null,
+    lastUsbTry: 0,
+    size: 0,
+    off: 0,
+    fd: -1,
+    bufAddr: null as BigInt | null,
+    chunk: null as Uint8Array | null
+  }
 
-  const normalButtonImg = 'file:///assets/img/button_over_9.png'
-  const selectedButtonImg = 'file:///assets/img/button_over_9.png'
+  // --- log capture (best effort: patches the shell's global log) --------------
+  const nativeLog = (typeof log === 'function') ? log : null
+  function pushLine (raw: string) {
+    const msg = String(raw)
+    for (let i = 0; i < msg.length; i += LINE_COLS) {
+      board.lines.push(msg.slice(i, i + LINE_COLS))
+      if (board.lines.length > MAX_LINES) board.lines.shift()
+    }
+  }
+  let logPatched = false
+  if (nativeLog !== null) {
+    try {
+      ;(globalThis as unknown as Record<string, unknown>).log = function (msg: string) {
+        pushLine(msg)
+        nativeLog(msg)
+      }
+      logPatched = (globalThis as unknown as Record<string, unknown>).log !== nativeLog
+    } catch (e) { /* log stays native */ }
+  }
 
+  // --- tiny kernel display helpers -------------------------------------------
+  function hex64 (v: BigInt) {
+    const hi = (v.hi >>> 0).toString(16).padStart(8, '0')
+    const lo = (v.lo >>> 0).toString(16).padStart(8, '0')
+    return '0x' + hi + lo
+  }
+  function getUid (): number | null {
+    try {
+      fn.register(24, 'getuid', [], 'bigint')
+      const v = fn.getuid()
+      return v instanceof BigInt ? (v.lo >>> 0) : v
+    } catch (e) { return null }
+  }
+  function getSandbox (): number | null {
+    try {
+      fn.register(585, 'is_in_sandbox', [], 'bigint')
+      const v = fn.is_in_sandbox()
+      return v instanceof BigInt ? (v.lo >>> 0) : v
+    } catch (e) { return null }
+  }
+
+  // --- UI: one Text per line, updated in place --------------------------------
   jsmaf.root.children.length = 0
+  new Style({ name: 'dbg-title', color: 'white', size: 34 })
+  new Style({ name: 'dbg-big', color: 'white', size: 26 })
+  new Style({ name: 'dbg-mid', color: 'white', size: 22 })
+  new Style({ name: 'dbg-body', color: 'white', size: 19 })
+  new Style({ name: 'dbg-small', color: 'white', size: 16 })
 
-  new Style({ name: 'white', color: 'white', size: 24 })
-  new Style({ name: 'title', color: 'white', size: 32 })
-
-  if (typeof startBgmIfEnabled === 'function') {
-    startBgmIfEnabled()
+  function mkText (x: number, y: number, style: string) {
+    const t = new jsmaf.Text()
+    t.x = x
+    t.y = y
+    t.text = ''
+    t.style = style
+    jsmaf.root.children.push(t)
+    return t
   }
 
-  const background = new Image({
-    url: 'file:///../download0/img/multiview_bg_VAF.png',
-    x: 0,
-    y: 0,
-    width: 1920,
-    height: 1080
-  })
-  jsmaf.root.children.push(background)
+  const ui = {
+    title: mkText(60, 34, 'dbg-title'),
+    s1: mkText(60, 100, 'dbg-big'),
+    s2: mkText(60, 142, 'dbg-mid'),
+    s3: mkText(60, 180, 'dbg-mid'),
+    sep: mkText(60, 220, 'dbg-small'),
+    log: [] as jsmaf.Text[],
+    dump: mkText(60, 992, 'dbg-mid'),
+    foot: mkText(60, 1036, 'dbg-small')
+  }
+  for (let i = 0; i < MAX_LINES; i++) ui.log.push(mkText(60, 250 + i * 33, 'dbg-body'))
+  ui.sep.text = '----------------------------------------------------------------------------------------------------------------------------------------------------'
+  ui.title.text = 'VUE DEBUG — BLACKBOARD (' + BUILD + ')'
 
-  const centerX = 960
-  const logoWidth = 600
-  const logoHeight = 338
+  function render () {
+    const fw = (jsmaf as unknown as Record<string, unknown>).fw_version as string | undefined
+    const path = (jsmaf as unknown as Record<string, unknown>).exploit_path as string | undefined
+    const phase = (jsmaf as unknown as Record<string, unknown>).relapse_phase as string | undefined
+    const done = !!jsmaf.vue_exploit_done
+    const uid = getUid()
+    const sand = getSandbox()
+    const jb = uid === 0 && sand === 0
+    let kbase: string | undefined
+    try {
+      const k = (typeof kernel !== 'undefined' && kernel && kernel.addr && (kernel.addr as Record<string, unknown>).base) ? (kernel.addr as Record<string, unknown>).base as BigInt : (jsmaf as unknown as Record<string, unknown>).kbase as BigInt | undefined
+      if (k) kbase = hex64(k as BigInt)
+    } catch (e) { /* no krw yet */ }
+    const elapsed = ((Date.now() - board.started) / 1000).toFixed(1)
+    const lastAct = (jsmaf as unknown as Record<string, unknown>).relapse_activity as number | undefined
+    const idle = lastAct ? ((Date.now() - lastAct) / 1000).toFixed(1) : '-'
 
-  const logo = new Image({
-    url: 'file:///../download0/img/logo.png',
-    x: centerX - logoWidth / 2,
-    y: 50,
-    width: logoWidth,
-    height: logoHeight
-  })
-  jsmaf.root.children.push(logo)
-
-  const menuOptions = [
-    { label: lang.jailbreak, script: 'loader.js', imgKey: 'jailbreak' },
-    { label: lang.payloadMenu, script: 'payload_host.js', imgKey: 'payloadMenu' },
-    { label: lang.config, script: 'config_ui.js', imgKey: 'config' }
-  ]
-
-  const startY = 450
-  const buttonSpacing = 120
-  const buttonWidth = 400
-  const buttonHeight = 80
-
-  for (let i = 0; i < menuOptions.length; i++) {
-    const btnX = centerX - buttonWidth / 2
-    const btnY = startY + i * buttonSpacing
-
-    const button = new Image({
-      url: normalButtonImg,
-      x: btnX,
-      y: btnY,
-      width: buttonWidth,
-      height: buttonHeight
-    })
-    buttons.push(button)
-    jsmaf.root.children.push(button)
-
-    const marker = new Image({
-      url: 'file:///assets/img/ad_pod_marker.png',
-      x: btnX + buttonWidth - 50,
-      y: btnY + 35,
-      width: 12,
-      height: 12,
-      visible: false
-    })
-    buttonMarkers.push(marker)
-    jsmaf.root.children.push(marker)
-
-    let btnText: Image | jsmaf.Text
-    if (useImageText) {
-      btnText = new Image({
-        url: textImageBase + menuOptions[i]!.imgKey + '.png',
-        x: btnX + 20,
-        y: btnY + 15,
-        width: 300,
-        height: 50
-      })
-    } else {
-      btnText = new jsmaf.Text()
-      btnText.text = menuOptions[i]!.label
-      btnText.x = btnX + buttonWidth / 2 - 60
-      btnText.y = btnY + buttonHeight / 2 - 12
-      btnText.style = 'white'
+    ui.s1.text = 'FW ' + (fw || '?') + '   uid ' + (uid === null ? '?' : uid) + '   sandbox ' + (sand === null ? '?' : sand) +
+      '   JB ' + (jb ? 'YES' : 'no') + (done ? '   EXPLOIT DONE' : '')
+    ui.s2.text = 'path ' + (path || '-') + '   phase ' + (phase || '-') + '   idle ' + idle + 's   t ' + elapsed + 's'
+    ui.s3.text = 'kbase ' + (kbase || '(pendiente)') + (logPatched ? '   log-capture ON' : '   log-capture OFF')
+    ui.dump.text = board.dump
+    ui.foot.text = 'loader ' + (board.loaderDone ? 'returned in ' + board.loaderMs.toFixed(1) + 's' : 'running/blocked') + '   stop with PS button'
+    for (let i = 0; i < MAX_LINES; i++) {
+      const n = board.lines.length
+      const line = i < MAX_LINES - n ? '' : board.lines[i - (MAX_LINES - n)]
+      ui.log[i]!.text = line || ''
     }
-    buttonTexts.push(btnText)
-    jsmaf.root.children.push(btnText)
-
-    buttonOrigPos.push({ x: btnX, y: btnY })
-    textOrigPos.push({ x: btnText.x, y: btnText.y })
   }
 
-  const exitX = centerX - buttonWidth / 2
-  const exitY = startY + menuOptions.length * buttonSpacing + 100
-
-  const exitButton = new Image({
-    url: normalButtonImg,
-    x: exitX,
-    y: exitY,
-    width: buttonWidth,
-    height: buttonHeight
-  })
-  buttons.push(exitButton)
-  jsmaf.root.children.push(exitButton)
-
-  const exitMarker = new Image({
-    url: 'file:///assets/img/ad_pod_marker.png',
-    x: exitX + buttonWidth - 50,
-    y: exitY + 35,
-    width: 12,
-    height: 12,
-    visible: false
-  })
-  buttonMarkers.push(exitMarker)
-  jsmaf.root.children.push(exitMarker)
-
-  let exitText: Image | jsmaf.Text
-  if (useImageText) {
-    exitText = new Image({
-      url: textImageBase + 'exit.png',
-      x: exitX + 20,
-      y: exitY + 15,
-      width: 300,
-      height: 50
-    })
-  } else {
-    exitText = new jsmaf.Text()
-    exitText.text = lang.exit
-    exitText.x = exitX + buttonWidth / 2 - 20
-    exitText.y = exitY + buttonHeight / 2 - 12
-    exitText.style = 'white'
+  // --- file helpers (open/write/close via syscalls, like binloader) ----------
+  function allocString (str: string) {
+    const addr = mem.malloc(str.length + 1)
+    const view = mem.view(addr)
+    for (let i = 0; i < str.length; i++) view.setUint8(i, str.charCodeAt(i))
+    view.setUint8(str.length, 0)
+    return addr
   }
-  buttonTexts.push(exitText)
-  jsmaf.root.children.push(exitText)
-
-  buttonOrigPos.push({ x: exitX, y: exitY })
-  textOrigPos.push({ x: exitText.x, y: exitText.y })
-
-  let zoomInInterval: number | null = null
-  let zoomOutInterval: number | null = null
-  let prevButton = -1
-
-  function easeInOut (t: number) {
-    return (1 - Math.cos(t * Math.PI)) / 2
+  function isError (v: BigInt | number) {
+    if (v instanceof BigInt) return v.hi === 0xffffffff
+    return v === -1 || v === 0xffffffff
   }
-
-  function animateZoomIn (btn: Image, text: jsmaf.Text, btnOrigX: number, btnOrigY: number, textOrigX: number, textOrigY: number) {
-    if (zoomInInterval) jsmaf.clearInterval(zoomInInterval)
-    const btnW = buttonWidth
-    const btnH = buttonHeight
-    const startScale = btn.scaleX || 1.0
-    const endScale = 1.1
-    const duration = 175
-    let elapsed = 0
-    const step = 16
-
-    zoomInInterval = jsmaf.setInterval(function () {
-      elapsed += step
-      const t = Math.min(elapsed / duration, 1)
-      const eased = easeInOut(t)
-      const scale = startScale + (endScale - startScale) * eased
-
-      btn.scaleX = scale
-      btn.scaleY = scale
-      btn.x = btnOrigX - (btnW * (scale - 1)) / 2
-      btn.y = btnOrigY - (btnH * (scale - 1)) / 2
-      text.scaleX = scale
-      text.scaleY = scale
-      text.x = textOrigX - (btnW * (scale - 1)) / 2
-      text.y = textOrigY - (btnH * (scale - 1)) / 2
-
-      if (t >= 1 && zoomInInterval) {
-        jsmaf.clearInterval(zoomInInterval)
-        zoomInInterval = null
-      }
-    }, step)
+  function openSys (path: string, flags: number) {
+    try {
+      fn.register(0x05, 'open_sys', ['bigint', 'bigint', 'bigint'], 'bigint')
+      return fn.open_sys(allocString(path), new BigInt(0, flags), new BigInt(0, 0o755)) as BigInt
+    } catch (e) { return new BigInt(-1) }
   }
-
-  function animateZoomOut (btn: Image, text: jsmaf.Text, btnOrigX: number, btnOrigY: number, textOrigX: number, textOrigY: number) {
-    if (zoomOutInterval) jsmaf.clearInterval(zoomOutInterval)
-    const btnW = buttonWidth
-    const btnH = buttonHeight
-    const startScale = btn.scaleX || 1.1
-    const endScale = 1.0
-    const duration = 175
-    let elapsed = 0
-    const step = 16
-
-    zoomOutInterval = jsmaf.setInterval(function () {
-      elapsed += step
-      const t = Math.min(elapsed / duration, 1)
-      const eased = easeInOut(t)
-      const scale = startScale + (endScale - startScale) * eased
-
-      btn.scaleX = scale
-      btn.scaleY = scale
-      btn.x = btnOrigX - (btnW * (scale - 1)) / 2
-      btn.y = btnOrigY - (btnH * (scale - 1)) / 2
-      text.scaleX = scale
-      text.scaleY = scale
-      text.x = textOrigX - (btnW * (scale - 1)) / 2
-      text.y = textOrigY - (btnH * (scale - 1)) / 2
-
-      if (t >= 1 && zoomOutInterval) {
-        jsmaf.clearInterval(zoomOutInterval)
-        zoomOutInterval = null
-      }
-    }, step)
+  function writeSys (fd: number, addr: BigInt, len: number) {
+    try {
+      fn.register(0x04, 'write_sys', ['bigint', 'bigint', 'bigint'], 'bigint')
+      return fn.write_sys(new BigInt(0, fd), addr, new BigInt(0, len)) as BigInt
+    } catch (e) { return new BigInt(-1) }
   }
-
-  function updateHighlight () {
-    // Animate out the previous button
-    const prevButtonObj = buttons[prevButton]
-    const buttonMarker = buttonMarkers[prevButton]
-    if (prevButton >= 0 && prevButton !== currentButton && prevButtonObj && buttonMarker) {
-      prevButtonObj.url = normalButtonImg
-      prevButtonObj.alpha = 0.7
-      prevButtonObj.borderColor = 'transparent'
-      prevButtonObj.borderWidth = 0
-      buttonMarker.visible = false
-      animateZoomOut(prevButtonObj, buttonTexts[prevButton]!, buttonOrigPos[prevButton]!.x, buttonOrigPos[prevButton]!.y, textOrigPos[prevButton]!.x, textOrigPos[prevButton]!.y)
+  function closeSys (fd: number) {
+    try {
+      fn.register(0x06, 'close_sys', ['number'], 'bigint')
+      fn.close_sys(fd)
+    } catch (e) { /* ignore */ }
+  }
+  function writeStr (fd: number, str: string) {
+    const addr = allocString(str)
+    const total = str.length
+    let off = 0
+    while (off < total) {
+      const n = total - off > 0x1000 ? 0x1000 : total - off
+      const r = writeSys(fd, addr.add(off), n)
+      if (isError(r)) return false
+      const wrote = r.lo
+      if (!wrote) return false
+      off += wrote
     }
+    return true
+  }
 
-    // Set styles for all buttons
-    for (let i = 0; i < buttons.length; i++) {
-      const button = buttons[i]
-      const buttonMarker = buttonMarkers[i]
-      const buttonText = buttonTexts[i]
-      const buttonOrigPos_ = buttonOrigPos[i]
-      const textOrigPos_ = textOrigPos[i]
-      if (button === undefined || buttonText === undefined || buttonOrigPos_ === undefined || textOrigPos_ === undefined || buttonMarker === undefined) continue
-      if (i === currentButton) {
-        button.url = selectedButtonImg
-        button.alpha = 1.0
-        button.borderColor = 'rgb(100,180,255)'
-        button.borderWidth = 3
-        buttonMarker.visible = true
-        animateZoomIn(button, buttonText, buttonOrigPos_.x, buttonOrigPos_.y, textOrigPos_.x, textOrigPos_.y)
-      } else if (i !== prevButton) {
-        button.url = normalButtonImg
-        button.alpha = 0.7
-        button.borderColor = 'transparent'
-        button.borderWidth = 0
-        button.scaleX = 1.0
-        button.scaleY = 1.0
-        button.x = buttonOrigPos_.x
-        button.y = buttonOrigPos_.y
-        buttonText.scaleX = 1.0
-        buttonText.scaleY = 1.0
-        buttonText.x = textOrigPos_.x
-        buttonText.y = textOrigPos_.y
-        buttonMarker.visible = false
+  function timestamp () {
+    try {
+      const d = new Date()
+      const p = function (n: number) { return (n < 10 ? '0' : '') + n }
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+        p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
+    } catch (e) { return '?' }
+  }
+
+  // --- USB detection + log dump ----------------------------------------------
+  function findUsb () {
+    for (const id of USB_IDS) {
+      const dir = '/mnt/usb' + id
+      const fd = openSys(dir + '/vue_debug.txt', O_WRONLY | O_CREAT | O_TRUNC)
+      if (!isError(fd)) {
+        board.usb = dir
+        const uid = getUid()
+        const sand = getSandbox()
+        const fw = (jsmaf as unknown as Record<string, unknown>).fw_version as string | undefined
+        const path = (jsmaf as unknown as Record<string, unknown>).exploit_path as string | undefined
+        const phase = (jsmaf as unknown as Record<string, unknown>).relapse_phase as string | undefined
+        let kbase = ''
+        try {
+          const k = (kernel.addr as Record<string, unknown>).base as BigInt | undefined
+          if (k) kbase = hex64(k)
+        } catch (e) { /* ignore */ }
+        const head = 'VUE DEBUG BLACKBOARD ' + BUILD + '\n' +
+          'when: ' + timestamp() + '\n' +
+          'fw: ' + (fw || '?') + '\n' +
+          'uid: ' + (uid === null ? '?' : uid) + ' sandbox: ' + (sand === null ? '?' : sand) + '\n' +
+          'exploit: ' + (path || '-') + ' phase: ' + (phase || '-') + '\n' +
+          'kbase: ' + (kbase || '-') + '\n' +
+          'loader_ms: ' + board.loaderMs.toFixed(1) + '\n' +
+          'log:\n'
+        writeStr(fd.lo >>> 0, head + board.lines.join('\n') + '\n')
+        closeSys(fd.lo >>> 0)
+        board.dump = 'DUMP: log saved to ' + dir + '/vue_debug.txt'
+        return dir
       }
     }
-
-    prevButton = currentButton
+    board.usb = null
+    return null
   }
 
-  function handleButtonPress () {
-    if (currentButton === buttons.length - 1) {
-      include('includes/kill_vue.js')
-    } else if (currentButton < menuOptions.length) {
-      const selectedOption = menuOptions[currentButton]
-      if (!selectedOption) return
+  // --- kernel.elf dump --------------------------------------------------------
+  function imageSize (base: BigInt) {
+    const hdr = kernel.read_buffer?.(base, 0x40)
+    if (!hdr || hdr.length < 0x40) return { size: DUMP_FALLBACK, elf: false }
+    const magic = hdr[0] === 0x7f && hdr[1] === 0x45 && hdr[2] === 0x4c && hdr[3] === 0x46
+    if (!magic) return { size: DUMP_FALLBACK, elf: false }
+    let phoff = 0
+    for (let i = 7; i >= 0; i--) phoff = phoff * 256 + hdr[0x20 + i]!
+    const entsize = hdr[0x36]! | (hdr[0x37]! << 8)
+    const phnum = hdr[0x38]! | (hdr[0x39]! << 8)
+    if (!phoff || !entsize || !phnum || phnum > 32) return { size: DUMP_FALLBACK, elf: true }
+    const ph = kernel.read_buffer?.(base.add(phoff), entsize * phnum)
+    if (!ph) return { size: DUMP_FALLBACK, elf: true }
+    let end = 0
+    for (let i = 0; i < phnum; i++) {
+      const o = i * entsize
+      const type = ph[o]! | (ph[o + 1]! << 8) | (ph[o + 2]! << 16) | (ph[o + 3]! << 24)
+      if (type !== 1) continue
+      let poff = 0
+      for (let b = 7; b >= 0; b--) poff = poff * 256 + ph[o + 0x08 + b]!
+      let fsz = 0
+      for (let b = 7; b >= 0; b--) fsz = fsz * 256 + ph[o + 0x20 + b]!
+      if (poff + fsz > end) end = poff + fsz
+    }
+    if (end < DUMP_MIN || end > DUMP_MAX) return { size: DUMP_FALLBACK, elf: true }
+    return { size: end, elf: true }
+  }
 
-      // Jailbreak re-press: loader already ran this session. Never disable
-      // input and never re-include loader.js (its re-press guard would just
-      // ignore it — this only avoids killing the key handler).
-      if (selectedOption.script === 'loader.js' && jsmaf.loader_has_run) {
-        log('[menu] Jailbreak re-press ignored: loader already ran')
-        try { utils.notify('Vue already initialized — use Payload Menu / Config') } catch (e) { /* optional */ }
+  function dumpKernel (dir: string) {
+    if (board.dumping || board.dumpDone) return
+    let base: BigInt | null = null
+    try {
+      const k = (kernel.addr as Record<string, unknown>).base as BigInt | undefined
+      if (k) base = k
+    } catch (e) { /* ignore */ }
+    if (!base && (jsmaf as unknown as Record<string, unknown>).kbase) base = (jsmaf as unknown as Record<string, unknown>).kbase as BigInt
+    if (!base) {
+      board.dump = 'DUMP: no kbase (exploit did not reach anchor)'
+      board.dumpDone = true
+      return
+    }
+    if (!kernel.read_buffer) {
+      board.dump = 'DUMP: log saved, but no KRW (kernel.elf needs the relapse path)'
+      board.dumpDone = true
+      return
+    }
+    board.dumping = true
+    const info = imageSize(base)
+    board.size = info.size
+    board.off = 0
+    const fd = openSys(dir + '/kernel.elf', O_WRONLY | O_CREAT | O_TRUNC)
+    if (isError(fd)) {
+      board.dump = 'DUMP: cannot create kernel.elf'
+      board.dumping = false
+      board.dumpDone = true
+      return
+    }
+    board.fd = fd.lo >>> 0
+    board.chunk = new Uint8Array(DUMP_CHUNK)
+    board.bufAddr = utils.get_backing(board.chunk)
+    board.dump = 'DUMP: kernel.elf ' + (info.elf ? '(elf ' : '(raw ') + (info.size / 1048576).toFixed(1) + ' MB) starting...'
+    jsmaf.setTimeout(dumpStep, 50)
+  }
+
+  function dumpStep () {
+    if (board.off >= board.size || !board.chunk || !board.bufAddr) {
+      closeSys(board.fd)
+      board.dumping = false
+      board.dumpDone = true
+      board.dump = 'DUMP: OK ' + (board.off / 1048576).toFixed(1) + ' MB -> ' + board.usb + '/kernel.elf'
+      return
+    }
+    const n = Math.min(DUMP_CHUNK, board.size - board.off)
+    let ok = false
+    try {
+      const base = ((kernel.addr as Record<string, unknown>).base as BigInt | undefined) ||
+        ((jsmaf as unknown as Record<string, unknown>).kbase as BigInt)
+      const data = kernel.read_buffer?.(base.add(board.off), n)
+      if (data && data.length === n) {
+        board.chunk.set(data)
+        const r = writeSys(board.fd, board.bufAddr, n)
+        ok = !isError(r) && r.lo === n
+      }
+    } catch (e) { ok = false }
+    if (!ok) {
+      closeSys(board.fd)
+      board.dumping = false
+      board.dumpDone = true
+      board.dump = 'DUMP: FAIL at ' + (board.off / 1048576).toFixed(1) + ' MB (krw/usb error)'
+      return
+    }
+    board.off += n
+    const pct = Math.floor((board.off / board.size) * 100)
+    board.dump = 'DUMP: kernel.elf ' + (board.off / 1048576).toFixed(1) + '/' + (board.size / 1048576).toFixed(1) +
+      ' MB (' + pct + '%)'
+    jsmaf.setTimeout(dumpStep, 1)
+  }
+
+  // --- boot: force debug-friendly config, auto-run the exploit flow ---------
+  try {
+    if (typeof CONFIG !== 'undefined') {
+      CONFIG.autoclose = false
+      CONFIG.music = false
+    }
+  } catch (e) { /* ignore */ }
+  ;(jsmaf as unknown as Record<string, unknown>).debug_board = true
+
+  pushLine('[board] blackboard active (build ' + BUILD + ')')
+  render()
+
+  board.started = Date.now()
+  try {
+    include('loader.js')
+  } catch (e) {
+    pushLine('[board] loader include threw: ' + ((e as Error).message || String(e)))
+  }
+  board.loaderDone = true
+  board.loaderMs = (Date.now() - board.started) / 1000
+  pushLine('[board] loader returned after ' + board.loaderMs.toFixed(1) + 's')
+  render()
+
+  // --- watcher: repaint + start the dump when JB is confirmed ----------------
+  jsmaf.setInterval(function () {
+    render()
+    if (board.dumpDone || board.dumping) return
+    const uid = getUid()
+    const sand = getSandbox()
+    if (uid === 0 && sand === 0) {
+      if (!board.usb && Date.now() - board.lastUsbTry > 10000) {
+        board.lastUsbTry = Date.now()
+        board.usb = findUsb()
+      }
+      const dir = board.usb
+      if (!dir) {
+        board.dump = 'DUMP: JB OK but no USB mounted (/mnt/usb0-3/vue_debug.txt)'
         return
       }
-
-      // Save the current key handler so a loader failure can restore input
-      // (previously input stayed disabled forever -> looked like a freeze).
-      const prevKeyHandler = jsmaf.onKeyDown
-      if (selectedOption.script === 'loader.js') {
-        jsmaf.onKeyDown = function () {}
-      }
-      log('Loading ' + selectedOption.script + '...')
-      try {
-        if (selectedOption.script.includes('loader.js')) {
-          include(selectedOption.script)
-        } else {
-          include('themes/' + (typeof CONFIG !== 'undefined' && CONFIG.theme ? CONFIG.theme : 'default') + '/' + selectedOption.script)
-        }
-      } catch (e) {
-        log('ERROR loading ' + selectedOption.script + ': ' + (e as Error).message)
-        if ((e as Error).stack) log((e as Error).stack!)
-        // restore input — the app must stay usable after a failed launch
-        jsmaf.onKeyDown = prevKeyHandler
-        try { utils.notify('Failed to start ' + selectedOption.script) } catch (e2) { /* optional */ }
-      }
+      dumpKernel(dir)
+    } else if (board.loaderDone) {
+      board.dump = 'DUMP: sin JB (uid/sandbox != 0) — no kernel.elf'
     }
-  }
-
-  jsmaf.onKeyDown = function (keyCode) {
-    if (keyCode === 6 || keyCode === 5) {
-      currentButton = (currentButton + 1) % buttons.length
-      updateHighlight()
-    } else if (keyCode === 4 || keyCode === 7) {
-      currentButton = (currentButton - 1 + buttons.length) % buttons.length
-      updateHighlight()
-    } else if (keyCode === 14) {
-      handleButtonPress()
-    }
-  }
-
-  updateHighlight()
-
-  log('Main menu loaded.')
+  }, 500)
 })()
