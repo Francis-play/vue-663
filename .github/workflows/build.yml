@@ -29,6 +29,26 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check include graph (non-blocking)
+        run: |
+          MISSING=""
+          for f in dist/download0/*.js; do
+            base=$(basename "$f")
+            if ! grep -rqF "'$base'" dist/download0 --include='*.js'; then
+              MISSING="$MISSING $base"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::JS sin include estático:$MISSING (link error en runtime)"
+          fi
+
+      - name: Check mojibake (non-blocking)
+        run: |
+          if grep -rnP 'â€|â†|Ã|Â|ï¿½' src --include='*.ts' --include='*.md' --include='*.json' > /tmp/moji.txt 2>/dev/null; then
+            echo "::warning::mojibake detectado (texto UTF-8 mal decodificado)"
+            head -20 /tmp/moji.txt
+          fi
+
       - name: Replace version strings
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
