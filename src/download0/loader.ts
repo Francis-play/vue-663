@@ -78,6 +78,23 @@ function start_relapse () {
   relapse()
 }
 
+// ---------------------------------------------------------------------------
+// Manual mode (debug-blackboard): the board calls this for each "PRUEBA n".
+// 1 = one clean attempt with idt_rsvd 0x1c1d00, no retries, no netctrl fallback
+// 2 = same with the 13.00 neighbour 0x1c1d40 (IDT-ALT)
+// 3 = sweep mode: observe/adopt matchers, retries allowed, still no fallback
+// ---------------------------------------------------------------------------
+export function debug_start_relapse (attempt: number) {
+  if (typeof relapse === 'undefined') include('relapse.js')
+  const reset = (globalThis as unknown as Record<string, unknown>).relapse_debug_reset
+  if (typeof reset === 'function') {
+    (reset as (n: number) => void)(attempt)
+  } else {
+    log('[loader] relapse_debug_reset missing: running legacy relapse()')
+  }
+  relapse()
+}
+
 function write64 (addr: BigInt, val: BigInt | number) {
   mem.view(addr).setBigInt(0, new BigInt(val), true)
 }
@@ -186,8 +203,14 @@ if (!loader_already_ran) {
       const is125x = compare_version(FW_VERSION, '12.50') >= 0 && compare_version(FW_VERSION, '12.52') <= 0
 
       let use_lapse = false
+      const manual = !!jsmaf.debug_manual
 
-      if (jb_behavior === 1) {
+      if (manual) {
+        log('[loader] manual mode: preflight only (no exploit dispatch, no watchdog)')
+        jsmaf.exploit_path = 'manual'
+        log('[loader] fw=' + FW_VERSION + ' is125x=' + (is125x ? 1 : 0) + ' — waiting for PRUEBA 1/2/3')
+        try { utils.notify(FW_VERSION + ' preflight OK (manual mode)') } catch (e) { /* optional */ }
+      } else if (jb_behavior === 1) {
         log('JB Behavior: NetControl (forced)')
         jsmaf.exploit_path = 'netctrl'
         include('netctrl_c0w_twins.js')

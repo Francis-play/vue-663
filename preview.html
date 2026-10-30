@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>VUE Blackboard (manual) - Previsualizador</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f0f13;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      min-height: 100vh;
+    }
+    h1 { margin-bottom: 12px; font-size: 18px; color: #a0a0ff; }
+    .controls {
+      background: #1a1a24;
+      border: 1px solid #333345;
+      padding: 10px 16px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      max-width: 1280px;
+    }
+    .controls strong { color: #8a8aa8; font-size: 12px; margin-right: 4px; }
+    button {
+      background: #2a2a3e;
+      color: #fff;
+      border: 1px solid #4a4a6e;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button:hover { background: #3a3a5e; }
+    button.key { background: #1f2a3a; border-color: #2f4a6e; min-width: 44px; }
+    .screen-container {
+      position: relative;
+      width: 1280px;
+      height: 720px;
+      background: #000;
+      border: 2px solid #444;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      overflow: hidden;
+    }
+    #viewport {
+      position: absolute;
+      width: 1920px;
+      height: 1080px;
+      transform: scale(0.6666667);
+      transform-origin: 0 0;
+      background: #000;
+    }
+    .jsmaf-text {
+      position: absolute;
+      white-space: pre;
+      line-height: 1.1;
+      font-family: 'Consolas', 'Courier New', monospace;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>PS4 JSMAF Blackboard (manual) - Simulador</h1>
+
+  <div class="controls">
+    <strong>teclas PS4:</strong>
+    <button class="key" onclick="press(4)">4 ↑</button>
+    <button class="key" onclick="press(6)">6 ↓</button>
+    <button class="key" onclick="press(7)">7 ←</button>
+    <button class="key" onclick="press(5)">5 →</button>
+    <button class="key" onclick="press(14)">X (14)</button>
+    <strong>| simular:</strong>
+    <button onclick="simPreflight()">RUN USERLAND (preflight)</button>
+    <button onclick="simFailEarly()">falla temprana (leak)</button>
+    <button onclick="simAnchorFail()">falla en ancla (IDT)</button>
+    <button onclick="simSweep()">SWEEP (prueba 3)</button>
+    <button onclick="simJBSuccess()">JB OK + USB</button>
+    <button onclick="simNetctrl()">log netctrl</button>
+    <button onclick="simReset()">reiniciar</button>
+  </div>
+
+  <div class="screen-container">
+    <div id="viewport"></div>
+  </div>
+
+  <script>
+    // --- JSMAF mock runtime -------------------------------------------------
+    const viewport = document.getElementById('viewport');
+    const styles = {};
+
+    window.Style = function (opts) {
+      styles[opts.name] = opts;
+    };
+
+    window.jsmaf = {
+      root: { children: [] },
+      setInterval: function (fn, ms) { return setInterval(fn, ms); },
+      clearInterval: function (id) { clearInterval(id); },
+      setTimeout: function (fn, ms) { return setTimeout(fn, ms); },
+      circleIsAdvanceButton: false,
+      debug_board: true,
+      debug_manual: true,
+      onKeyDown: null
+    };
+
+    window.jsmaf.Text = function () {
+      const el = document.createElement('div');
+      el.className = 'jsmaf-text';
+      viewport.appendChild(el);
+
+      let _x = 0, _y = 0, _text = '', _styleName = '';
+
+      Object.defineProperty(this, 'x', {
+        get: () => _x,
+        set: (val) => { _x = val; el.style.left = val + 'px'; }
+      });
+      Object.defineProperty(this, 'y', {
+        get: () => _y,
+        set: (val) => { _y = val; el.style.top = val + 'px'; }
+      });
+      Object.defineProperty(this, 'text', {
+        get: () => _text,
+        set: (val) => { _text = val; el.textContent = val; }
+      });
+      Object.defineProperty(this, 'style', {
+        get: () => _styleName,
+        set: (val) => {
+          _styleName = val;
+          const s = styles[val];
+          if (s) {
+            el.style.color = s.color || 'white';
+            el.style.fontSize = (s.size || 20) + 'px';
+          }
+        }
+      });
+    };
+
+    window.CONFIG = {
+      autoclose: false,
+      music: false,
+      relapse_retries: 3,
+      relapse_spin: 40000000,
+      relapse_towait: 1000,
+      nc_main_loop: 3,
+      nc_triplefree: 8,
+      nc_kqueue_iters: 5000,
+      nc_kqueue_yield: 1,
+      nc_magic: 0x1430000
+    };
+
+    window.log = function (msg) { console.log('[LOG]', msg); };
+    window.debug = function (msg) { console.log('[DBG]', msg); };
+    window.include = function (file) { console.log('[INCLUDE]', file); };
+
+    let _mockUid = 1001;
+    let _mockSand = 1;
+    window.fn = {
+      register: function () {},
+      getuid: function () { return _mockUid; },
+      is_in_sandbox: function () { return _mockSand; },
+      open_sys: function () { return { lo: 3, hi: 0 }; },
+      write_sys: function (fd, addr, len) { return { lo: len.lo || len, hi: 0 }; },
+      close_sys: function () {}
+    };
+
+    window.mem = {
+      malloc: function () { return { add: () => ({ lo: 0, hi: 0 }) }; },
+      view: function () { return { setUint8: () => {} }; }
+    };
+
+    window.utils = {
+      get_backing: function () { return { lo: 0x1000, hi: 0 }; }
+    };
+
+    window.BigInt = function (hi, lo) {
+      this.hi = typeof hi === 'number' ? hi : 0;
+      this.lo = typeof lo === 'number' ? (lo < 0 ? lo + 0x100000000 : lo) : 0;
+      this.add = (n) => new BigInt(this.hi, this.lo + (n.lo !== undefined ? n.lo : n));
+    };
+
+    window.kernel = {
+      addr: { base: null },
+      read_buffer: function (base, len) {
+        const arr = new Uint8Array(len);
+        if (len >= 0x40) {
+          arr[0] = 0x7f; arr[1] = 0x45; arr[2] = 0x4c; arr[3] = 0x46;
+          arr[0x20] = 0x40; arr[0x36] = 56; arr[0x38] = 4;
+        }
+        return arr;
+      }
+    };
+
+    function press (key) {
+      if (typeof window.jsmaf.onKeyDown === 'function') window.jsmaf.onKeyDown(key);
+    }
+
+    // --- simulated exploit stages -------------------------------------------
+    window.debug_start_relapse = function (attempt) {
+      const fw = window.jsmaf.fw_version || '12.52';
+      window.jsmaf.exploit_path = 'relapse(p' + attempt + ')';
+      log('[relapse:START] try 1 maxRetries=' + (attempt === 3 ? 3 : 0) + ' idt=' +
+        (attempt === 1 ? '0x1c1d00' : attempt === 2 ? '0x1c1d40' : 'auto') +
+        ' sweep=' + (attempt === 3 ? 1 : 0) + ' noFallback=1');
+      log('[relapse:DEBUG-RESET] attempt=' + attempt + ' retries=' + (attempt === 3 ? 3 : 0));
+      log('[relapse:PR-CFG] nleak=262144 spray=512 spin=40000000 chunk=2000000 ka=32768 towait=1000');
+      log('[relapse:PR-MAIN-PAIR] sp=12/13');
+      log('[relapse:PR-ARENAS] lk=0xE00000 ar=0x140010 reserved=0');
+      log('[relapse:PR-WORKER-SPAWNED] core=4 pipe=14/15');
+      log('[relapse:PR-WORKER-READY] parked-on-pipe=14');
+      log('[relapse:PR-SATURATE-ENTER] aio_submit_cmd blocking=8 prio=3');
+      window.jsmaf.relapse_phase = 'PR-SATURATE';
+      window.jsmaf.relapse_activity = Date.now();
+      setTimeout(function () {
+        log('[relapse:PR-SATURATE] blocking=8 prio=3 state=SUBMITTED');
+        log('[relapse:PR-POOL] reclaim sockets=64');
+        log('[relapse:ARM-FIN] a=1 sprayed=64 wait=1000ms');
+        window.jsmaf.relapse_phase = 'LEAK';
+        if (attempt === 1) {
+          log('[relapse:PR-LEAK] hits=0 walked=262144/262144 uniq=0');
+          log('[relapse:FAIL-FINAL] leak: no owner stamp (benign=1)');
+          log('[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x20 tduc=0x130 fail: leak: no owner stamp');
+        } else if (attempt === 2) {
+          log('[relapse:PR-LEAK] hits=51 walked=30211/262144 uniq=1');
+          log('[relapse:PR-LEAK-HIT] curthread=0xffff88800c3a4000');
+          log('[relapse:PR-PASSA-TARGET] X1=curthread+0x130 KA=32768');
+          log('[relapse:PR-FIRE] passA nodes=65600 sink_moved=17 node0_sink=0');
+          log('[relapse:PR-PASSA] m=17 -> k=32752');
+          log('[relapse:PR-UCRED] ucred=0xffff88800a1b2c30');
+          log('[relapse:PR-FIRE] anchor-sweep nodes=4096 sink_moved=0');
+          log('[relapse:ANCHOR-BYTE] b5 gate=26 j=5 low=0x20 ones=256 edge=-1 cands=2 val=NO-MATCH');
+          log('[relapse:FAIL-FINAL] anchor decode (benign=1)');
+          log('[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x20 tduc=0x130 fail: anchor decode');
+        } else {
+          log('[relapse:PR-LEAK] hits=214 walked=90312/262144 uniq=3 scan=16:51,24:163');
+          log('[relapse:SWEEP-OWNER] offset=0x18 hits=163 value=ffff88800c3a4000 (default 0x18)');
+          log('[relapse:PR-LEAK-HIT] curthread=0xffff88800c3a4000');
+          log('[relapse:SWEEP-SINK] passA 0x18:12=0x1 0x20:9=0x1 0x28:3=0x1');
+          log('[relapse:SWEEP-SINK-ADOPT] passA sink_off -> 0x28 hits=12');
+          log('[relapse:SWEEP-TDUCRED] nocross at 0x130 -> try 0x128 (2/4)');
+          log('[relapse:PR-PASSA] m=19 -> k=32750 tduc=0x128');
+          log('[relapse:PR-UCRED] ucred=0xffff88800a1b2c30');
+          log('[relapse:ANCHOR-BYTE] b5 gate=26 j=5 low=0x20 ones=256 edge=-1 cands=1 val=0x8e');
+          log('[relapse:SWEEP-RVA] rva=0x1c1d40 (was 0x1c1d00) 0x1c1d00->0x80210040 0x1c1d20->0x80210020 0x1c1d40->0x80210000* 0x1c1d50->0x8020fff0');
+          log('[relapse:ANCHOR-HANDLER] handler=0xffffffff8022c140 rva=0x1c1d40');
+          log('[relapse:ANCHOR-KERNEL-BASE] kernel_base=0xffffffff80200000 aligned0x4000=1');
+          log('[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x28 tduc=0x128 anchor-ok rva=0x1c1d40');
+          log('[relapse:KF-TARGETS] oid=0xffffffff803a2f80');
+          log('[relapse:FAIL-FINAL] kf: sysctl oid window did not open (benign=0)');
+        }
+        window.jsmaf.relapse_phase = 'FAIL-FINAL';
+      }, 900);
+    };
+
+    function simPreflight () {
+      window.jsmaf.fw_version = '12.52';
+      window.jsmaf.exploit_path = 'manual';
+      log('[loader] All scripts loaded');
+      log('[vue-663 build] diag-build-2026-10-29 (manual blackboard)');
+      log('[loader] manual mode: preflight only (no exploit dispatch, no watchdog)');
+      log('[loader] fw=12.52 is125x=1 — waiting for PRUEBA 1/2/3');
+    }
+
+    function simFailEarly () {
+      if (typeof window.debug_start_relapse === 'function') window.debug_start_relapse(1);
+    }
+
+    function simAnchorFail () {
+      if (typeof window.debug_start_relapse === 'function') window.debug_start_relapse(2);
+    }
+
+    function simSweep () {
+      if (typeof window.debug_start_relapse === 'function') window.debug_start_relapse(3);
+    }
+
+    function simNetctrl () {
+      log('[netctrl] knobs main_loop=3 triplefree=8 kq_iters=5000 kq_yield=1 magic=0x1430000');
+      log('[netctrl] leak_kqueue_fdp FAIL iters=5000 magic=0x1430000 magic_hits=0 fdp_bad=0 last_magic=0x0 last_fdp=0x0');
+      log('Failed to leak kqueue_fdp');
+    }
+
+    function simJBSuccess () {
+      _mockUid = 0;
+      _mockSand = 0;
+      window.jsmaf.vue_exploit_done = true;
+      window.kernel.addr.base = new window.BigInt(0xffffffff, 0x80200000);
+      log('[relapse:KJ-OK] getuid=0 kernel_base=0xffffffff80200000 armings=6');
+      log('[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x28 tduc=0x128 ok uid=0 kbase=0xffffffff80200000');
+    }
+
+    function simReset () { location.reload(); }
+  </script>
+
+  <script src="dist/download0/themes/default/main.js"></script>
+</body>
+</html>

