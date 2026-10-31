@@ -129,7 +129,8 @@ ${code}
   } catch (e) { showErr((e && e.stack) || String(e)) }
   // ---- end theme ----
 
-  ${demo ? `
+  ${demo
+? `
   // ---- demo run (only for the preview screenshot) ----
   var K = jsmaf.onKeyDown
   window.debug_start_relapse = function (n) {
@@ -160,7 +161,8 @@ ${code}
   K(6); K(14)                // PRUEBA 3 (SWEEP)
   jsmaf.sweep_summary = 'owner=0x18 sink=0x28 tduc=0x128 anchor-ok'
   jsmaf.kbase = new BigInt(0xffffffff, 0x80200000)
-  ` : ''}
+  `
+: ''}
 
   // scale to the window
   var box = document.getElementById('box')
