@@ -2,121 +2,1235 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VUE BLACKBOARD — Vista Final (TV 1920x1080)</title>
+<title>VUE BLACKBOARD — render real (dist)</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#000; color:#e0e0e0; overflow:hidden; width:1920px; height:1080px; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-  #screen { width:1920px; height:1080px; position:relative; background:#000; }
-  .t { position:absolute; white-space:pre; line-height:1.1; font-family:'Consolas','Courier New',monospace; user-select:none; }
-  /* colores exactos del main.ts */
-  .bg-title { color:#FFFFFF; font-size:30px; }
-  .bg-status { color:#E9ECEF; font-size:18px; }
-  .bg-status-on { color:#69DB7C; font-size:18px; }
-  .bg-btn { color:#CED4DA; font-size:22px; }
-  .bg-btn-sel { color:#FFD43B; font-size:22px; }
-  .bg-btn-off { color:#6C757D; font-size:22px; opacity:0.45; }
-  .bg-mark { color:#FFD43B; font-size:19px; }
-  .bg-hdr { color:#ADB5BD; font-size:17px; }
-  .bg-pin { color:#ADB5BD; font-size:15px; }
-  .bg-foot { color:#868E96; font-size:14px; }
-  .lg-sys { color:#E9ECEF; font-size:17px; }
-  .lg-rel { color:#4DABF7; font-size:17px; }
-  .lg-net { color:#6BCF7F; font-size:17px; }
-  .lg-err { color:#FF6B6B; font-size:17px; }
-  .lg-warn { color:#FFA94D; font-size:17px; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{background:#05070A}
+  #stage{display:flex;justify-content:center;padding:22px 0}
+  #box{position:relative}
+  #screen{position:absolute;top:0;left:0;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden;
+          background:#000;font-family:'Segoe UI',Inter,system-ui,sans-serif}
+  .t{position:absolute;white-space:pre;transform-origin:0 0;line-height:1.15}
 </style>
 </head>
 <body>
-<div id="screen">
-  <!-- título -->
-  <div class="t bg-title" style="left:40px;top:22px;">VUE BLACKBOARD · diag-build-2026-10-29</div>
+<div id="stage"><div id="box"><div id="screen"></div></div></div>
+<script>
+(function () {
+  var STYLES = {}
+  var screen = document.getElementById('screen')
 
-  <!-- status -->
-  <div class="t bg-status" style="left:40px;top:68px;">FW ?    uid 1001    sandbox 1    JB no</div>
-  <div class="t bg-status" style="left:40px;top:89px;">stage idle    t 0.0s    idle -</div>
-  <div class="t bg-status" style="left:40px;top:110px;">path -</div>
-  <div class="t bg-status" style="left:40px;top:131px;">phase -</div>
-  <div class="t bg-status" style="left:40px;top:152px;">kbase (pendiente)</div>
-  <div class="t bg-status" style="left:40px;top:173px;">preflight pending · log ON</div>
-  <div class="t bg-status" style="left:40px;top:194px;">swp -</div>
-  <div class="t bg-status" style="left:40px;top:215px;">tried 1:- 2:- 3:-</div>
+  function Style (o) { STYLES[o.name] = { color: o.color, size: o.size } }
 
-  <!-- botones -->
-  <div class="t bg-btn" style="left:40px;top:250px;">  RUN USERLAND</div>
-  <div class="t bg-btn-off" style="left:40px;top:294px;opacity:0.45;">  PRUEBA 1 — relapse (IDT 1c1d00, 1 intento)</div>
-  <div class="t bg-btn-off" style="left:40px;top:338px;opacity:0.45;">  PRUEBA 2 — relapse (IDT-ALT 1c1d40)</div>
-  <div class="t bg-btn-off" style="left:40px;top:382px;opacity:0.45;">  PRUEBA 3 — SWEEP (sin datos)</div>
-  <div class="t bg-btn-off" style="left:40px;top:426px;opacity:0.45;">  LOG ▲ (más viejo)</div>
-  <div class="t bg-btn-off" style="left:40px;top:470px;opacity:0.45;">  LOG ▼ (más nuevo)</div>
+  function Text () {
+    var self = this
+    this.el = document.createElement('div')
+    this.el.className = 't'
+    screen.appendChild(this.el)
+    this._x = 0; this._y = 0; this._text = ''; this._style = ''
+    this._color = ''; this._alpha = 1; this._sx = 1; this._sy = 1
+    this.apply = function () {
+      var st = STYLES[self._style] || { color: '#fff', size: 16 }
+      var e = self.el
+      e.style.left = self._x + 'px'
+      e.style.top = self._y + 'px'
+      e.style.fontSize = st.size + 'px'
+      e.style.color = self._color || st.color || '#fff'
+      e.style.opacity = self._alpha
+      e.style.transform = 'scale(' + self._sx + ',' + self._sy + ')'
+      e.textContent = self._text
+    }
+    Object.defineProperty(this, 'x', { get: function () { return self._x }, set: function (v) { self._x = v; self.apply() } })
+    Object.defineProperty(this, 'y', { get: function () { return self._y }, set: function (v) { self._y = v; self.apply() } })
+    Object.defineProperty(this, 'text', { get: function () { return self._text }, set: function (v) { self._text = String(v); self.apply() } })
+    Object.defineProperty(this, 'style', { get: function () { return self._style }, set: function (v) { self._style = v; self.apply() } })
+    Object.defineProperty(this, 'color', { get: function () { return self._color }, set: function (v) { self._color = v; self.apply() } })
+    Object.defineProperty(this, 'alpha', { get: function () { return self._alpha }, set: function (v) { self._alpha = v; self.apply() } })
+    Object.defineProperty(this, 'scaleX', { get: function () { return self._sx }, set: function (v) { self._sx = v; self.apply() } })
+    Object.defineProperty(this, 'scaleY', { get: function () { return self._sy }, set: function (v) { self._sy = v; self.apply() } })
+    this.apply()
+  }
 
-  <!-- counts -->
-  <div class="t bg-hdr" style="left:40px;top:522px;">lines rel 0 · net 0 · ldr 0 · board 3</div>
+  // --- 64-bit mock (ps4 shell maps BigInt to a 2-word object) ---
+  function BigInt (hi, lo) {
+    if (lo === undefined) { lo = hi; hi = 0 }
+    this.hi = (hi >>> 0) >>> 0
+    this.lo = (lo >>> 0) >>> 0
+  }
+  BigInt.prototype.add = function (n) {
+    var add = (typeof n === 'object' && n !== null) ? n.lo : n
+    var lo = this.lo + (add >>> 0)
+    var carry = lo >= 0x100000000 ? 1 : 0
+    return new BigInt(this.hi + carry, lo % 0x100000000)
+  }
 
-  <!-- last mark header -->
-  <div class="t bg-hdr" style="left:40px;top:552px;">LAST</div>
+  var JB = true
 
-  <!-- last mark -->
-  <div class="t bg-mark" style="left:40px;top:572px;">LAST [board] blackboard ready (build diag-build-2026-10-29) — no autorun, press RU</div>
-  <div class="t bg-mark" style="left:40px;top:594px;">     </div>
+  var jsmaf = {
+    root: { children: [] },
+    Text: Text,
+    setInterval: function (f) { return window.setInterval(f, 700) },
+    setTimeout: function (f, t) { return window.setTimeout(f, t) },
+    clearInterval: function (i) { window.clearInterval(i) },
+    circleIsAdvanceButton: false
+  }
 
-  <!-- pins (pinned marks left) -->
-  <div class="t bg-hdr" style="left:40px;top:616px;">PINNED</div>
-  <div class="t bg-pin" style="left:40px;top:638px;">START ·</div>
-  <div class="t bg-pin" style="left:40px;top:657px;">PR-CFG ·</div>
-  <div class="t bg-pin" style="left:40px;top:676px;">PR-SATURATE-ENTER ·</div>
-  <div class="t bg-pin" style="left:40px;top:695px;">PR-SATURATE ·</div>
-  <div class="t bg-pin" style="left:40px;top:714px;">PR-POOL ·</div>
-  <div class="t bg-pin" style="left:40px;top:733px;">PR-WORKER-READY ·</div>
-  <div class="t bg-pin" style="left:40px;top:752px;">ARM-FIN ·</div>
-  <div class="t bg-pin" style="left:40px;top:771px;">PR-FIRE ·</div>
-  <div class="t bg-pin" style="left:40px;top:790px;">PR-LEAK ·</div>
-  <div class="t bg-pin" style="left:40px;top:809px;">PR-PASSA ·</div>
-  <div class="t bg-pin" style="left:40px;top:828px;">PR-PASSA-NOCROSS ·</div>
-  <div class="t bg-pin" style="left:40px;top:847px;">PR-UCRED ·</div>
-  <div class="t bg-pin" style="left:40px;top:866px;">ANCHOR-HANDLER ·</div>
-  <div class="t bg-pin" style="left:40px;top:885px;">ANCHOR-KERNEL-BASE ·</div>
-  <div class="t bg-pin" style="left:40px;top:904px;">IDT-ALT ·</div>
-  <div class="t bg-pin" style="left:40px;top:923px;">SWEEP-SUMMARY ·</div>
-  <div class="t bg-pin" style="left:40px;top:942px;">FAIL-FINAL ·</div>
+  var include = function (name) {
+    if (name === 'loader.js') { jsmaf.fw_version = '12.52'; jsmaf.loader_has_run = true }
+  }
+  var log = function () {}
+  var debug = function () {}
+  var CONFIG = { relapse_retries: 3, relapse_spin: 40000000, relapse_towait: 1000 }
+  var fn = {
+    register: function () {},
+    getuid: function () { return new BigInt(0, JB ? 0 : 1001) },
+    is_in_sandbox: function () { return new BigInt(0, JB ? 0 : 1) },
+    open_sys: function () { return new BigInt(0, 4) },
+    write_sys: function (fd, addr, len) { return new BigInt(0, (len && len.lo) || 0x10000) },
+    close_sys: function () {}
+  }
+  var mem = { malloc: function () { return new BigInt(0, 0x1000) }, view: function () { return { setUint8: function () {} } } }
+  var utils = { get_backing: function () { return new BigInt(0, 0x1000) } }
+  var kernel = { addr: { base: null }, read_buffer: function (b, l) { return new Uint8Array(l) } }
 
-  <!-- log header -->
-  <div class="t bg-hdr" style="left:680px;top:22px;">LOG · pág 1/1 · ring 3/3000 · tail</div>
+  // expose the globals the theme patches (log/debug) and reads (CONFIG)
+  window.log = log
+  window.debug = debug
+  window.CONFIG = CONFIG
+  window.jsmaf = jsmaf
 
-  <!-- log lines -->
-  <div class="t lg-sys" style="left:680px;top:50px;">VUE BLACKBOARD · diag-build-2026-10-29</div>
-  <div class="t lg-sys" style="left:680px;top:76px;">--- session start ---</div>
-  <div class="t lg-sys" style="left:680px;top:102px;">[loader] manual mode: preflight only (no exploit dispatch, no watchdog)</div>
-  <div class="t lg-sys" style="left:680px;top:128px;">[loader] fw=12.52 is125x=1 — waiting for PRUEBA 1/2/3</div>
-  <div class="t lg-rel" style="left:680px;top:154px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=1 retries=0 idt=0x1c1d00 sweep=0 noFallback=1 owner=0x18 sink=0x20 tduc=0x130</div>
-  <div class="t lg-err" style="left:680px;top:180px;color:#FF6B6B;">[relapse:FAIL-FINAL] leak: no owner stamp (benign=1)</div>
-  <div class="t lg-err" style="left:680px;top:206px;color:#FF6B6B;">[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x20 tduc=0x130 fail: leak: no owner stamp</div>
-  <div class="t lg-sys" style="left:680px;top:232px;">[loader] preflight OK (manual mode)</div>
-  <div class="t lg-sys" style="left:680px;top:258px;">RUN USERLAND -> include(loader.js) [manual mode, no autorun]</div>
-  <div class="t lg-sys" style="left:680px;top:284px;">[loader] All scripts loaded</div>
-  <div class="t lg-sys" style="left:680px;top:310px;">[loader] fw=12.52 is125x=1 — waiting for PRUEBA 1/2/3</div>
-  <div class="t lg-rel" style="left:680px;top:336px;color:#4DABF7;">[relapse:START] try 1 maxRetries=0 idt=0x1c1d00 sweep=0 noFallback=1</div>
-  <div class="t lg-rel" style="left:680px;top:362px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=2 retries=0 idt=0x1c1d00 sweep=0 noFallback=1</div>
-  <div class="t lg-rel" style="left:680px;top:388px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=3 retries=3 idt=auto sweep=1 noFallback=1 owner=0x18 sink=0x20 tduc=0x130</div>
-  <div class="t lg-rel" style="left:680px;top:414px;color:#4DABF7;">[relapse:PR-FIRE] passA nodes=65600 sink_moved=17 node0_sink=0 f_socket=-1 f_hits=0 state=0x0</div>
-  <div class="t lg-rel" style="left:680px;top:440px;color:#4DABF7;">[relapse:ANCHOR-HANDLER] handler=0xffffffff8022c140 rva=0x1c1d40</div>
-  <div class="t lg-rel" style="left:680px;top:466px;color:#4DABF7;">[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x28 tduc=0x128 anchor-ok rva=0x1c1d40</div>
-  <div class="t lg-rel" style="left:680px;top:492px;color:#4DABF7;">[relapse:SWEEP-RVA] rva=0x1c1d40 (was 0x1c1d00) 0x1c1d00->0x80210040 0x1c1d20->0x80210020 0x1c1d40->0x80210000* 0x1c1d50->0x8020fff0</div>
-  <div class="t lg-err" style="left:680px;top:518px;color:#FF6B6B;">[relapse:FAIL-FINAL] kf: sysctl oid window did not open (benign=0)</div>
-  <div class="t lg-rel" style="left:680px;top:544px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=3 retries=3 idt=auto sweep=1 noFallback=1 owner=0x18 sink=0x28 tduc=0x128</div>
-  <div class="t lg-rel" style="left:680px;top:570px;color:#4DABF7;">[relapse:START] try 1 maxRetries=3 idt=auto sweep=1 noFallback=1</div>
-  <div class="t lg-rel" style="left:680px;top:596px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=3 retries=3 idt=auto sweep=1 noFallback=1 owner=0x18 sink=0x28 tduc=0x128</div>
-  <div class="t lg-rel" style="left:680px;top:622px;color:#4DABF7;">[relapse:SWEEP-OWNER] offset=0x18 hits=163 value=ffff88800c3a4000 (default 0x18)</div>
-  <div class="t lg-err" style="left:680px;top:648px;color:#FF6B6B;">[relapse:FAIL-FINAL] leak: no owner stamp (benign=1)</div>
-  <div class="t lg-sys" style="left:680px;top:674px;">[board] blackboard ready (build diag-build-2026-10-29) — no autorun, press RUN USERLAND</div>
+  // ---- THEME (real build from dist) ----
+  function showErr (msg) {
+    var d = document.createElement('div')
+    d.style.cssText = 'position:absolute;left:20px;top:20px;right:20px;color:#FF6B6B;font:14px/1.4 monospace;white-space:pre-wrap;z-index:99'
+    d.textContent = 'RUNTIME ERROR' + String.fromCharCode(10) + msg
+    screen.appendChild(d)
+  }
+  window.addEventListener('error', function (ev) { showErr(ev.message + String.fromCharCode(10) + (ev.error && ev.error.stack || '')) })
+  try {
+// ---------------------------------------------------------------------------
+// debug-blackboard theme (manual mode) - layout "blackboard v2"
+//
+//   header : brand + version/build + live chips (fw, uid, sandbox, jb, kbase, t)
+//   left   : ACCIONES (buttons) - ESTADO - SALIDA (usb -> 2 elf) - ULTIMA MARCA
+//   centre : run log, 26 rows, tag column + message column (aligned by x)
+//   right  : MARCAS, the 17 pinned marks as a pipeline map (dim = not reached)
+//
+// No autorun: the user presses RUN USERLAND, then PRUEBA 1/2/3.
+// Every log() call repaints synchronously, so if the exploit blocks the thread
+// the LAST MARK stays on screen as evidence.
+//
+// Nothing here is hardcoded: fw/uid/sandbox/kbase come from syscalls, the
+// version/build come from %VERSION_TAG% / %VERSION_STRING% (replaced by CI).
+// ---------------------------------------------------------------------------
 
-  <!-- pinned status -->
-  <div class="t bg-status" style="left:40px;top:986px;">DUMP: JB OK but no USB mounted (/mnt/usb0-3/vue_debug.txt)</div>
-  <div class="t bg-foot" style="left:40px;top:1006px;">writes 0 msgs · USB none</div>
+(function () {
+  var BUILD = 'diag-build-2026-10-30';
+  var VERSION_RAW = '%VERSION_TAG%';
+  var COMMIT_RAW = '%VERSION_STRING%';
+  var VERSION = VERSION_RAW.indexOf('%') === 0 ? 'dev' : VERSION_RAW;
+  var COMMIT = COMMIT_RAW.indexOf('%') === 0 ? 'local' : COMMIT_RAW;
+  var RING_MAX = 3000;
+  var HIST_MAX = 3000;
+  var LOG_COLS = 78;
+  var LOG_ROWS = 26;
+  var O_WRONLY = 1;
+  var O_CREAT = 0x200;
+  var O_TRUNC = 0x400;
+  var USB_IDS = ['0', '1', '2', '3'];
+  var DUMP_CHUNK = 0x10000;
+  var DUMP_MIN = 0x400000;
+  var DUMP_MAX = 0x4800000;
+  var DUMP_FALLBACK = 0x2400000;
 
-  <!-- bottom info -->
-  <div class="t bg-foot" style="left:40px;top:1046px;">teclas: 6/5 ↓ · 4/7 ↑ · X activa</div>
-  <div class="t bg-foot" style="left:680px;top:950px;">knobs rel retry=3 spin=40000000 towait=1000 | nc kq=5000</div>
-</div>
+  // step states for the SALIDA panel
+  var PENDING = 0;
+  var RUNNING = 1;
+  var DONE = 2;
+  var FAILED = 3;
+
+  // the pipeline, in order: the rail is a map, not a growing list
+  var PINS = ['START', 'PR-CFG', 'PR-SATURATE-ENTER', 'PR-SATURATE', 'PR-POOL', 'PR-WORKER-READY', 'ARM-FIN', 'PR-FIRE', 'PR-LEAK', 'PR-PASSA', 'PR-PASSA-NOCROSS', 'PR-UCRED', 'ANCHOR-HANDLER', 'ANCHOR-KERNEL-BASE', 'IDT-ALT', 'SWEEP-SUMMARY', 'FAIL-FINAL'];
+  var board = {
+    ringT: [],
+    ringM: [],
+    ringS: [],
+    history: [],
+    paging: false,
+    viewStart: 0,
+    sel: 0,
+    stage: 'idle',
+    preflight: false,
+    tried1: false,
+    tried2: false,
+    tried3: false,
+    lastMark: '',
+    pins: {},
+    counts: {
+      rel: 0,
+      net: 0,
+      ldr: 0,
+      board: 0
+    },
+    started: Date.now(),
+    dump: 'waiting for JB + USB',
+    dumping: false,
+    dumpDone: false,
+    usb: null,
+    lastUsbTry: 0,
+    autoElf: true,
+    logStep: PENDING,
+    elfStep: PENDING,
+    size: 0,
+    off: 0,
+    fd: -1,
+    bufAddr: null,
+    chunk: null,
+    uid: null,
+    sand: null
+  };
+
+  // --- helpers ---------------------------------------------------------------
+  function hex64(v) {
+    var hi = (v.hi >>> 0).toString(16).padStart(8, '0');
+    var lo = (v.lo >>> 0).toString(16).padStart(8, '0');
+    return '0x' + hi + lo;
+  }
+  function jsmafGet(key) {
+    return jsmaf[key];
+  }
+  function jsmafSet(key, value) {
+    try {
+      jsmaf[key] = value;
+    } catch (e) {/* optional */}
+  }
+  // cached syscall thunks (register once: the GC is disabled, avoid leaking closures)
+  var getuidFn = null;
+  var sandboxFn = null;
+  function getUid() {
+    try {
+      if (getuidFn === null) {
+        fn.register(24, 'getuid', [], 'bigint');
+        getuidFn = fn.getuid;
+      }
+      var v = getuidFn();
+      return v instanceof BigInt ? v.lo >>> 0 : v;
+    } catch (e) {
+      return null;
+    }
+  }
+  function getSandbox() {
+    try {
+      if (sandboxFn === null) {
+        fn.register(585, 'is_in_sandbox', [], 'bigint');
+        sandboxFn = fn.is_in_sandbox;
+      }
+      var v = sandboxFn();
+      return v instanceof BigInt ? v.lo >>> 0 : v;
+    } catch (e) {
+      return null;
+    }
+  }
+  function kbaseHex() {
+    try {
+      var k = typeof kernel !== 'undefined' && kernel && kernel.addr ? kernel.addr.base : null;
+      if (k) return hex64(k);
+    } catch (e) {/* no krw */}
+    var j = jsmafGet('kbase');
+    return j ? hex64(j) : '';
+  }
+
+  // --- styles (one per colour+size, created once) -----------------------------
+  jsmaf.root.children.length = 0;
+  new Style({
+    name: 'bb-brand',
+    color: '#41B883',
+    size: 34
+  });
+  new Style({
+    name: 'bb-name',
+    color: '#FFFFFF',
+    size: 26
+  });
+  new Style({
+    name: 'bb-sub',
+    color: '#8A96A3',
+    size: 14
+  });
+  new Style({
+    name: 'bb-sec',
+    color: '#8A96A3',
+    size: 13
+  });
+  new Style({
+    name: 'bb-rule',
+    color: '#28313B',
+    size: 12
+  });
+  new Style({
+    name: 'bb-lbl',
+    color: '#5C6977',
+    size: 11
+  });
+  new Style({
+    name: 'bb-val',
+    color: '#E6EAEF',
+    size: 18
+  });
+  new Style({
+    name: 'bb-val-ok',
+    color: '#69DB7C',
+    size: 18
+  });
+  new Style({
+    name: 'bb-val-bad',
+    color: '#FF6B6B',
+    size: 18
+  });
+  new Style({
+    name: 'bb-val-acc',
+    color: '#FFD43B',
+    size: 18
+  });
+  new Style({
+    name: 'bb-btn',
+    color: '#CED4DA',
+    size: 20
+  });
+  new Style({
+    name: 'bb-btn-sel',
+    color: '#FFD43B',
+    size: 20
+  });
+  new Style({
+    name: 'bb-btn-off',
+    color: '#6C757D',
+    size: 20
+  });
+  new Style({
+    name: 'bb-mark',
+    color: '#FFD43B',
+    size: 16
+  });
+  new Style({
+    name: 'bb-mark2',
+    color: '#8A96A3',
+    size: 16
+  });
+  new Style({
+    name: 'bb-pin',
+    color: '#5C6977',
+    size: 12
+  });
+  new Style({
+    name: 'bb-pin-val',
+    color: '#95A2AF',
+    size: 13
+  });
+  new Style({
+    name: 'bb-pin-bad',
+    color: '#FF9C9C',
+    size: 13
+  });
+  new Style({
+    name: 'bb-val-sm',
+    color: '#E6EAEF',
+    size: 14
+  });
+  new Style({
+    name: 'bb-val-sm-acc',
+    color: '#FFD43B',
+    size: 14
+  });
+  new Style({
+    name: 'bb-foot',
+    color: '#5C6977',
+    size: 13
+  });
+  new Style({
+    name: 'lg-sys',
+    color: '#CFD6DE',
+    size: 17
+  });
+  new Style({
+    name: 'lg-rel',
+    color: '#A9D3F5',
+    size: 17
+  });
+  new Style({
+    name: 'lg-net',
+    color: '#8EE6A6',
+    size: 17
+  });
+  new Style({
+    name: 'lg-err',
+    color: '#FF9C9C',
+    size: 17
+  });
+  new Style({
+    name: 'lg-warn',
+    color: '#FFC978',
+    size: 17
+  });
+  new Style({
+    name: 'lg-tag',
+    color: '#4C5764',
+    size: 17
+  });
+  new Style({
+    name: 'lg-tag-rel',
+    color: '#2E7EC4',
+    size: 17
+  });
+  new Style({
+    name: 'lg-tag-ok',
+    color: '#3C9D5C',
+    size: 17
+  });
+  new Style({
+    name: 'lg-tag-err',
+    color: '#B94A4A',
+    size: 17
+  });
+  new Style({
+    name: 'lg-tag-warn',
+    color: '#B8802F',
+    size: 17
+  });
+  function mkText(x, y, style) {
+    var t = new jsmaf.Text();
+    t.x = x;
+    t.y = y;
+    t.text = '';
+    t.style = style;
+    jsmaf.root.children.push(t);
+    return t;
+  }
+  function mkRule(x, y, n) {
+    var t = mkText(x, y, 'bb-rule');
+    t.text = '-'.repeat(n);
+    return t;
+  }
+
+  // --- layout ---------------------------------------------------------------
+  // columns: left 32..556 | centre 580..1500 | right 1524..1888
+  var L_X = 32;
+  var C_X = 580;
+  var M_X = 852;
+  var R_X = 1524;
+  var BTN_Y = 132;
+  var BTN_PITCH = 60;
+  var CHIPS = [{
+    k: 'FW',
+    w: 66
+  }, {
+    k: 'UID',
+    w: 74
+  }, {
+    k: 'SBX',
+    w: 66
+  }, {
+    k: 'JB',
+    w: 74
+  }, {
+    k: 'KBASE',
+    w: 196
+  }, {
+    k: 'T',
+    w: 78
+  }];
+  var ui = {
+    brand: mkText(L_X, 24, 'bb-brand'),
+    name: mkText(L_X + 78, 30, 'bb-name'),
+    sub: mkText(L_X, 74, 'bb-sub'),
+    chipsK: [],
+    chipsV: [],
+    btn: [],
+    stK: [],
+    stV: [],
+    usbK: mkText(L_X, 730, 'bb-lbl'),
+    usbV: mkText(L_X + 46, 724, 'bb-val'),
+    elfN: [],
+    elfT: [],
+    elfS: [],
+    autoK: mkText(L_X, 842, 'bb-lbl'),
+    autoV: mkText(L_X + 92, 836, 'bb-val'),
+    markK: mkText(L_X, 866, 'bb-sec'),
+    mark: [],
+    logHdr: mkText(C_X, 112, 'bb-sec'),
+    logPage: mkText(C_X + 520, 112, 'bb-sec'),
+    logTag: [],
+    logMsg: [],
+    logFoot: mkText(C_X, 944, 'bb-foot'),
+    logKeys: mkText(C_X, 968, 'bb-foot'),
+    pinHdr: mkText(R_X, 112, 'bb-sec'),
+    pinCnt: mkText(R_X + 250, 112, 'bb-sec'),
+    pinT: [],
+    pinV: [],
+    pinFoot: mkText(R_X, 896, 'bb-foot'),
+    foot: mkText(L_X, 1010, 'bb-foot')
+  };
+  ui.brand.text = 'VUE';
+  ui.name.text = 'BLACKBOARD';
+  ui.sub.text = 'relapse-663 · ' + BUILD;
+  ui.logHdr.text = 'LOG DE CORRIDA';
+  ui.pinHdr.text = 'MARCAS';
+  ui.markK.text = 'ULTIMA MARCA';
+  ui.usbK.text = 'USB';
+  ui.autoK.text = 'AUTO ELF';
+  mkRule(L_X, 100, 330);
+  mkRule(C_X, 136, 172);
+  mkRule(R_X, 136, 66);
+
+  // section titles
+  mkText(L_X, 108, 'bb-sec').text = 'ACCIONES';
+  mkText(L_X, 544, 'bb-sec').text = 'ESTADO';
+  mkText(L_X, 706, 'bb-sec').text = 'SALIDA';
+  var CHIP_GAP = 16;
+  {
+    var total = 0;
+    for (var c of CHIPS) total += c.w + CHIP_GAP;
+    var x = 1888 - total + CHIP_GAP;
+    for (var _c of CHIPS) {
+      ui.chipsK.push(mkText(x, 26, 'bb-lbl'));
+      ui.chipsV.push(mkText(x, 42, 'bb-val'));
+      ui.chipsK[ui.chipsK.length - 1].text = _c.k;
+      x += _c.w + CHIP_GAP;
+    }
+  }
+
+  // 7 action buttons
+  for (var i = 0; i < 7; i++) ui.btn.push(mkText(L_X + 12, BTN_Y + i * BTN_PITCH, 'bb-btn'));
+
+  // estado: 3 cells + 2 cells + 1 wide (sweep)
+  var SY = 568;
+  var ST_POS = [[L_X, SY], [L_X + 172, SY], [L_X + 344, SY], [L_X, SY + 46], [L_X + 172, SY + 46], [L_X, SY + 92]];
+  for (var _i = 0; _i < 6; _i++) {
+    var pos = ST_POS[_i];
+    ui.stK.push(mkText(pos[0], pos[1], 'bb-lbl'));
+    ui.stV.push(mkText(pos[0], pos[1] + 15, 'bb-val'));
+  }
+
+  // salida: 2 elf steps
+  for (var _i2 = 0; _i2 < 2; _i2++) {
+    ui.elfN.push(mkText(L_X, 764 + _i2 * 36, 'bb-val'));
+    ui.elfT.push(mkText(L_X + 24, 764 + _i2 * 36, 'bb-val'));
+    ui.elfS.push(mkText(L_X + 250, 764 + _i2 * 36, 'bb-val'));
+  }
+
+  // ultima marca: 2 lines
+  ui.mark.push(mkText(L_X, 892, 'bb-mark'), mkText(L_X, 916, 'bb-mark2'));
+
+  // log rows: tag column + message column
+  for (var _i3 = 0; _i3 < LOG_ROWS; _i3++) {
+    ui.logTag.push(mkText(C_X, 150 + _i3 * 30, 'lg-tag'));
+    ui.logMsg.push(mkText(M_X, 150 + _i3 * 30, 'lg-sys'));
+  }
+
+  // marks rail: 17 items, tag line + value line
+  var PIN_Y = 150;
+  var PIN_PITCH = 44;
+  for (var _i4 = 0; _i4 < PINS.length; _i4++) {
+    ui.pinT.push(mkText(R_X, PIN_Y + _i4 * PIN_PITCH, 'bb-pin'));
+    ui.pinV.push(mkText(R_X, PIN_Y + 16 + _i4 * PIN_PITCH, 'bb-pin-val'));
+  }
+
+  // --- log capture -----------------------------------------------------------
+  var nativeLog = typeof log === 'function' ? log : null;
+  var nativeDebug = typeof debug === 'function' ? debug : null;
+  var logPatched = false;
+  function splitTag(msg) {
+    if (msg.charAt(0) !== '[') return {
+      tag: '',
+      msg
+    };
+    var end = msg.indexOf(']');
+    if (end < 0 || end > 34) return {
+      tag: '',
+      msg
+    };
+    var tag = msg.slice(1, end);
+    var colon = tag.indexOf(':');
+    if (colon >= 0) tag = tag.slice(colon + 1);
+    return {
+      tag,
+      msg: msg.slice(end + 1).trim()
+    };
+  }
+  function sourceStyle(msg) {
+    if (msg.indexOf('FAIL') >= 0 || msg.indexOf('ERROR') >= 0 || msg.indexOf('NOCROSS') >= 0 || msg.indexOf('NO-MATCH') >= 0 || msg.indexOf('OUT-OF-BOUNDS') >= 0) return 'lg-err';
+    if (msg.indexOf('BENIGN-RETRY') >= 0 || msg.indexOf('WARN') >= 0 || msg.indexOf('stall') >= 0) return 'lg-warn';
+    if (msg.indexOf('[relapse:') >= 0 || msg.indexOf('Relapse') >= 0) return 'lg-rel';
+    if (msg.indexOf('[netctrl') >= 0 || msg.indexOf('kqueue') >= 0 || msg.indexOf('NetControl') >= 0) return 'lg-net';
+    return 'lg-sys';
+  }
+  function tagStyle(st) {
+    if (st === 'lg-err') return 'lg-tag-err';
+    if (st === 'lg-warn') return 'lg-tag-warn';
+    if (st === 'lg-rel') return 'lg-tag-rel';
+    if (st === 'lg-net') return 'lg-tag-ok';
+    return 'lg-tag';
+  }
+  function bumpCounts(msg) {
+    if (msg.indexOf('[relapse:') >= 0) board.counts.rel++;else if (msg.indexOf('[netctrl') >= 0 || msg.indexOf('kqueue') >= 0) board.counts.net++;else if (msg.indexOf('[ldr]') >= 0 || msg.indexOf('[loader') >= 0 || msg.indexOf('[watchdog') >= 0) board.counts.ldr++;else board.counts.board++;
+  }
+  function trackPins(msg) {
+    var p = splitTag(msg);
+    if (p.tag === '' || PINS.indexOf(p.tag) < 0) return;
+    board.pins[p.tag] = p.msg.slice(0, 92);
+    repaintPins();
+  }
+  function trackLastMark(msg) {
+    if (msg.charAt(0) !== '[') return;
+    if (msg.indexOf('[board]') === 0) return;
+    var p = splitTag(msg);
+    board.lastMark = (p.tag ? p.tag + ' · ' : '') + p.msg;
+    paintLastMark();
+  }
+  function pushLine(raw) {
+    var msg = String(raw);
+    board.history.push(msg);
+    if (board.history.length > HIST_MAX) board.history.shift();
+    var st = sourceStyle(msg);
+    var p = splitTag(msg);
+    var body = p.msg.length > 0 ? p.msg : msg;
+    var off = 0;
+    do {
+      board.ringT.push(off === 0 ? p.tag : '');
+      board.ringM.push(body.slice(off, off + LOG_COLS));
+      board.ringS.push(st);
+      off += LOG_COLS;
+    } while (off < body.length);
+    var drop = board.ringT.length - RING_MAX;
+    if (drop > 0) {
+      board.ringT.splice(0, drop);
+      board.ringM.splice(0, drop);
+      board.ringS.splice(0, drop);
+    }
+    bumpCounts(msg);
+    trackPins(msg);
+    trackLastMark(msg);
+    if (!board.paging) repaintLog();
+  }
+  try {
+    if (nativeLog !== null) {
+      ;
+      globalThis.log = function (msg) {
+        pushLine(msg);
+        nativeLog(msg);
+      };
+      logPatched = globalThis.log !== nativeLog;
+    }
+  } catch (e) {/* log stays native */}
+  try {
+    if (nativeDebug !== null) {
+      ;
+      globalThis.debug = function (msg) {
+        pushLine(msg);
+        nativeDebug(msg);
+      };
+    }
+  } catch (e) {/* debug stays native */}
+
+  // --- painters --------------------------------------------------------------
+  function setText(t, v, style) {
+    if (t.text !== v) t.text = v;
+    if (style !== undefined && t.style !== style) t.style = style;
+  }
+  function repaintLog() {
+    if (!board.paging) board.viewStart = Math.max(0, board.ringT.length - LOG_ROWS);
+    var start = board.viewStart;
+    var tail = Math.max(0, board.ringT.length - LOG_ROWS);
+    if (start > tail) start = tail;
+    for (var _i5 = 0; _i5 < LOG_ROWS; _i5++) {
+      var idx = start + _i5;
+      if (idx < board.ringT.length) {
+        var st = board.ringS[idx];
+        setText(ui.logTag[_i5], board.ringT[idx], tagStyle(st));
+        setText(ui.logMsg[_i5], board.ringM[idx], st);
+      } else {
+        setText(ui.logTag[_i5], '');
+        setText(ui.logMsg[_i5], '');
+      }
+    }
+    var pages = Math.max(1, Math.ceil(board.ringT.length / LOG_ROWS));
+    var page = Math.max(1, Math.min(pages, Math.ceil((start + LOG_ROWS) / LOG_ROWS)));
+    setText(ui.logPage, 'pág ' + page + '/' + pages + ' · ring ' + board.ringT.length + '/' + RING_MAX + (board.paging ? ' · SCROLL' : ' · tail'));
+  }
+  function repaintPins() {
+    var reached = 0;
+    var lastReached = -1;
+    for (var _i6 = 0; _i6 < PINS.length; _i6++) {
+      var tag = PINS[_i6];
+      var val = board.pins[tag];
+      var has = val !== undefined;
+      if (has) {
+        reached++;
+        lastReached = _i6;
+      }
+      setText(ui.pinT[_i6], (_i6 === lastReached ? '> ' : '  ') + tag, 'bb-pin');
+      setText(ui.pinV[_i6], '   ' + (has ? val.slice(0, 48) : 'no alcanzado'), has ? tag === 'FAIL-FINAL' ? 'bb-pin-bad' : 'bb-pin-val' : 'bb-pin');
+      ui.pinT[_i6].alpha = has ? 1 : 0.55;
+      ui.pinV[_i6].alpha = has ? 1 : 0.3;
+    }
+    setText(ui.pinCnt, reached + '/' + PINS.length);
+    var nextIdx = lastReached + 1;
+    setText(ui.pinFoot, nextIdx < PINS.length ? 'siguiente · ' + PINS[nextIdx] : 'pipeline completo');
+  }
+  function paintLastMark() {
+    var s = board.lastMark;
+    var a = s.slice(0, 56);
+    var b = '';
+    if (s.length > 56) {
+      var cut = s.lastIndexOf(' ', 56);
+      if (cut < 32) cut = 56;
+      a = s.slice(0, cut);
+      b = s.slice(cut).trim();
+    }
+    setText(ui.mark[0], a || '-');
+    setText(ui.mark[1], b ? '   ' + b : '');
+  }
+  function readCreds() {
+    if (!board.preflight) return;
+    if (board.stage === 'preflight' || board.stage === 'prueba') return;
+    var u = getUid();
+    var s = getSandbox();
+    if (u !== null) board.uid = u;
+    if (s !== null) board.sand = s;
+  }
+  function renderHeader() {
+    var fw = jsmafGet('fw_version');
+    var jb = board.uid === 0 && board.sand === 0;
+    var kb = kbaseHex();
+    var elapsed = Math.floor((Date.now() - board.started) / 1000);
+    var mm = Math.floor(elapsed / 60);
+    var ss = elapsed % 60;
+    setText(ui.chipsV[0], fw || '?', 'bb-val');
+    setText(ui.chipsV[1], board.uid === null ? '?' : String(board.uid));
+    setText(ui.chipsV[2], board.sand === null ? '?' : String(board.sand));
+    setText(ui.chipsV[3], jb ? 'YES' : 'no', jb ? 'bb-val-ok' : 'bb-val-bad');
+    setText(ui.chipsV[4], kb || '(pendiente)', kb ? 'bb-val-acc' : 'bb-val');
+    setText(ui.chipsV[5], (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss);
+    setText(ui.sub, 'relapse-663 · ' + BUILD + ' · v' + VERSION + ' (' + COMMIT + ')');
+  }
+  function renderStatus() {
+    var path = jsmafGet('exploit_path');
+    var phase = jsmafGet('relapse_phase');
+    var done = !!jsmaf.vue_exploit_done;
+    var act = jsmafGet('relapse_activity');
+    var idle = act ? ((Date.now() - act) / 1000).toFixed(1) + 's' : '-';
+    var swp = jsmafGet('sweep_summary') || '-';
+    var keys = ['stage', 'phase', 'idle', 'path', 'preflight', 'sweep'];
+    var vals = [board.stage + (done ? ' · DONE' : ''), phase || '-', idle, path || '-', board.preflight ? 'done' : 'pending', swp];
+    var styles = ['bb-val', phase !== undefined && phase.indexOf('FAIL') >= 0 ? 'bb-val-bad' : 'bb-val', 'bb-val', 'bb-val', board.preflight ? 'bb-val-ok' : 'bb-val', 'bb-val-sm-acc'];
+    for (var _i7 = 0; _i7 < keys.length; _i7++) {
+      setText(ui.stK[_i7], keys[_i7].toUpperCase());
+      setText(ui.stV[_i7], vals[_i7], styles[_i7]);
+    }
+  }
+  function elfStateText(step) {
+    if (step === DONE) return 'ok';
+    if (step === FAILED) return 'fail';
+    if (step === RUNNING) return 'run';
+    return 'pendiente';
+  }
+  function renderSalida() {
+    if (board.usb) {
+      setText(ui.usbV, board.usb, 'bb-val-ok');
+    } else if (board.uid === 0 && board.sand === 0) {
+      setText(ui.usbV, 'sin USB (jb ok, buscando)', 'bb-val-sm-acc');
+    } else {
+      setText(ui.usbV, 'esperando JB', 'bb-val');
+    }
+    setText(ui.elfN[0], '1');
+    setText(ui.elfT[0], 'kernel.elf');
+    var elfTxt = elfStateText(board.elfStep);
+    if (board.elfStep === RUNNING) {
+      elfTxt = (board.off / 1048576).toFixed(1) + '/' + (board.size / 1048576).toFixed(1) + ' MB';
+    } else if (board.elfStep === DONE) {
+      elfTxt = 'ok ' + (board.off / 1048576).toFixed(1) + ' MB';
+    }
+    setText(ui.elfS[0], elfTxt, board.elfStep === DONE ? 'bb-val-ok' : board.elfStep === FAILED ? 'bb-val-bad' : 'bb-val');
+    setText(ui.elfN[1], '2');
+    setText(ui.elfT[1], 'vue_debug.txt');
+    var logTxt = board.logStep === DONE ? 'ok ' + board.history.length + ' msgs' : board.logStep === FAILED ? 'fail' : 'pendiente';
+    setText(ui.elfS[1], logTxt, board.logStep === DONE ? 'bb-val-ok' : board.logStep === FAILED ? 'bb-val-bad' : 'bb-val');
+    setText(ui.autoV, board.autoElf ? '[x] tras JB' : '[ ] manual', board.autoElf ? 'bb-val-ok' : 'bb-val');
+  }
+  function renderFoot() {
+    setText(ui.logFoot, 'tried 1:' + (board.tried1 ? 'y' : '-') + ' 2:' + (board.tried2 ? 'y' : '-') + ' 3:' + (board.tried3 ? 'y' : '-') + ' · rel ' + board.counts.rel + ' · net ' + board.counts.net + ' · ldr ' + board.counts.ldr + ' · board ' + board.counts.board + ' · ' + board.history.length + ' msgs');
+    setText(ui.logKeys, 'teclas 6/5 mover · X activar · 4/7 atrás' + (logPatched ? '' : ' · log OFF'));
+    setText(ui.foot, board.dump + '  ·  knobs ' + knobLine());
+  }
+  function renderAll() {
+    readCreds();
+    renderHeader();
+    renderStatus();
+    renderSalida();
+    renderFoot();
+    repaintPins();
+    updateButtons();
+  }
+  function knobLine() {
+    try {
+      if (typeof CONFIG === 'undefined') return '-';
+      var _c2 = CONFIG;
+      var g = function (k, d) {
+        var v = _c2[k];
+        return typeof v === 'number' && v > 0 ? v : d;
+      };
+      return 'retry=' + g('relapse_retries', 3) + ' spin=' + g('relapse_spin', 40000000) + ' towait=' + g('relapse_towait', 1000);
+    } catch (e) {
+      return '-';
+    }
+  }
+
+  // --- buttons ---------------------------------------------------------------
+  var BUTTONS = ['run.userland', 'prueba1', 'prueba2', 'prueba3', 'auto.elf', 'log.up', 'log.down'];
+  function sweepReady() {
+    if (board.pins['PR-FIRE'] || board.pins['PR-LEAK'] || board.pins['PR-PASSA-NOCROSS'] || jsmafGet('sweep_ready')) return true;
+    return !!(board.tried1 && board.tried2);
+  }
+  function btnEnabled(id) {
+    if (id === 'run.userland') return !board.preflight;
+    if (id === 'prueba1' || id === 'prueba2') return board.preflight && board.stage !== 'prueba';
+    if (id === 'prueba3') return board.preflight && sweepReady();
+    if (id === 'auto.elf') return true;
+    if (id === 'log.up') return board.ringT.length > LOG_ROWS;
+    if (id === 'log.down') return board.paging;
+    return false;
+  }
+  function btnLabel(id) {
+    if (id === 'run.userland') return 'RUN USERLAND';
+    if (id === 'prueba1') return 'PRUEBA 1';
+    if (id === 'prueba2') return 'PRUEBA 2';
+    if (id === 'prueba3') return 'PRUEBA 3 - SWEEP';
+    if (id === 'auto.elf') return board.autoElf ? 'AUTO ELF  [x]' : 'AUTO ELF  [ ]';
+    if (id === 'log.up') return 'LOG ▲';
+    if (id === 'log.down') return 'LOG ▼';
+    return id;
+  }
+  function updateButtons() {
+    for (var _i8 = 0; _i8 < BUTTONS.length; _i8++) {
+      var id = BUTTONS[_i8];
+      var sel = _i8 === board.sel;
+      var on = btnEnabled(id);
+      var t = ui.btn[_i8];
+      t.x = L_X + (sel ? 16 : 12);
+      t.y = BTN_Y + _i8 * BTN_PITCH;
+      setText(t, (sel ? '[> ' : '[  ') + btnLabel(id) + ' ]', sel ? on ? 'bb-btn-sel' : 'bb-btn-off' : on ? 'bb-btn' : 'bb-btn-off');
+      t.alpha = on ? 1 : 0.4;
+      t.scaleX = sel ? 1.08 : 1;
+      t.scaleY = sel ? 1.08 : 1;
+    }
+  }
+  function pageBy(dir) {
+    if (dir > 0) {
+      if (!board.paging) {
+        board.paging = true;
+        board.viewStart = Math.max(0, board.ringT.length - 2 * LOG_ROWS);
+      } else {
+        board.viewStart = Math.max(0, board.viewStart - LOG_ROWS);
+      }
+    } else if (board.paging) {
+      board.viewStart += LOG_ROWS;
+      if (board.viewStart + LOG_ROWS >= board.ringT.length) {
+        board.viewStart = Math.max(0, board.ringT.length - LOG_ROWS);
+        board.paging = false;
+      }
+    }
+    repaintLog();
+    updateButtons();
+  }
+  function runUserland() {
+    if (board.preflight) {
+      pushLine('[board] preflight already done (loader_has_run)');
+      return;
+    }
+    jsmafSet('debug_manual', true);
+    board.stage = 'preflight';
+    board.started = Date.now();
+    updateButtons();
+    pushLine('[board] RUN USERLAND -> include(loader.js) [manual mode, no autorun]');
+    try {
+      include('loader.js');
+    } catch (e) {
+      var err = e;
+      pushLine('[board] loader include threw: ' + (err.message || String(e)));
+      if (err.stack) pushLine('[board] stack: ' + err.stack);
+      board.stage = 'preflight-fail';
+      updateButtons();
+      return;
+    }
+    board.preflight = true;
+    board.stage = 'idle';
+    board.uid = getUid();
+    board.sand = getSandbox();
+    pushLine('[board] preflight returned: fw=' + (jsmafGet('fw_version') || '?') + ' uid=' + (board.uid === null ? '?' : board.uid) + ' sandbox=' + (board.sand === null ? '?' : board.sand));
+    renderAll();
+  }
+  function runPrueba(n) {
+    if (!board.preflight) {
+      pushLine('[board] PRUEBA ' + n + ' ignored: RUN USERLAND first');
+      return;
+    }
+    if (n === 3 && board.stage !== 'prueba' && !sweepReady()) {
+      pushLine('[board] PRUEBA 3 ignored: no data yet (run 1 and 2)');
+      return;
+    }
+    var dsr = globalThis.debug_start_relapse;
+    if (typeof dsr !== 'function') {
+      pushLine('[board] PRUEBA ' + n + ' failed: debug_start_relapse missing (loader manual mode?)');
+      return;
+    }
+    board.stage = 'prueba';
+    jsmafSet('debug_sweep', n === 3);
+    jsmafSet('debug_attempt', n);
+    jsmafSet('exploit_path', 'relapse(p' + n + ')');
+    if (n === 1) board.tried1 = true;
+    if (n === 2) board.tried2 = true;
+    if (n === 3) board.tried3 = true;
+    pushLine('[board] PRUEBA ' + n + ' -> debug_start_relapse(' + n + ') sweep=' + (n === 3 ? 'on' : 'off'));
+    updateButtons();
+    try {
+      ;
+      dsr(n);
+    } catch (e) {
+      var err = e;
+      pushLine('[board] PRUEBA ' + n + ' threw: ' + (err.message || String(e)));
+    }
+    board.stage = 'idle';
+    pushLine('[board] PRUEBA ' + n + ' returned' + (jsmaf.vue_exploit_done ? ' (EXPLOIT DONE)' : ''));
+    renderAll();
+  }
+  function activate() {
+    var id = BUTTONS[board.sel];
+    if (!btnEnabled(id)) {
+      pushLine('[board] "' + id + '" disabled');
+      return;
+    }
+    if (id === 'run.userland') runUserland();else if (id === 'prueba1') runPrueba(1);else if (id === 'prueba2') runPrueba(2);else if (id === 'prueba3') runPrueba(3);else if (id === 'auto.elf') {
+      board.autoElf = !board.autoElf;
+      pushLine('[board] AUTO ELF ' + (board.autoElf ? 'ON' : 'OFF') + ' (JB -> usb -> kernel.elf + vue_debug.txt)');
+      renderSalida();
+      updateButtons();
+    } else if (id === 'log.up') pageBy(1);else if (id === 'log.down') pageBy(-1);
+  }
+  var confirmKey = jsmaf.circleIsAdvanceButton ? 13 : 14;
+  jsmaf.onKeyDown = function (keyCode) {
+    if (keyCode === 6 || keyCode === 5) {
+      board.sel = (board.sel + 1) % BUTTONS.length;
+      updateButtons();
+    } else if (keyCode === 4 || keyCode === 7) {
+      board.sel = (board.sel + BUTTONS.length - 1) % BUTTONS.length;
+      updateButtons();
+    } else if (keyCode === confirmKey) {
+      activate();
+    }
+  };
+
+  // --- file helpers (open/write/close via syscalls, like binloader) ----------
+  function allocString(str) {
+    var addr = mem.malloc(str.length + 1);
+    var view = mem.view(addr);
+    for (var _i9 = 0; _i9 < str.length; _i9++) view.setUint8(_i9, str.charCodeAt(_i9));
+    view.setUint8(str.length, 0);
+    return addr;
+  }
+  function isError(v) {
+    if (v instanceof BigInt) return v.hi === 0xffffffff;
+    return v === -1 || v === 0xffffffff;
+  }
+  function openSys(path, flags) {
+    try {
+      fn.register(0x05, 'open_sys', ['bigint', 'bigint', 'bigint'], 'bigint');
+      return fn.open_sys(allocString(path), new BigInt(0, flags), new BigInt(0, 0o755));
+    } catch (e) {
+      return new BigInt(-1);
+    }
+  }
+  function writeSys(fd, addr, len) {
+    try {
+      fn.register(0x04, 'write_sys', ['bigint', 'bigint', 'bigint'], 'bigint');
+      return fn.write_sys(new BigInt(0, fd), addr, new BigInt(0, len));
+    } catch (e) {
+      return new BigInt(-1);
+    }
+  }
+  function closeSys(fd) {
+    try {
+      fn.register(0x06, 'close_sys', ['number'], 'bigint');
+      fn.close_sys(fd);
+    } catch (e) {/* ignore */}
+  }
+  function writeStr(fd, str) {
+    var addr = allocString(str);
+    var total = str.length;
+    var off = 0;
+    while (off < total) {
+      var n = total - off > 0x1000 ? 0x1000 : total - off;
+      var r = writeSys(fd, addr.add(off), n);
+      if (isError(r)) return false;
+      var wrote = r.lo;
+      if (!wrote) return false;
+      off += wrote;
+    }
+    return true;
+  }
+  function timestamp() {
+    try {
+      var d = new Date();
+      var p = function (n) {
+        return (n < 10 ? '0' : '') + n;
+      };
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    } catch (e) {
+      return '?';
+    }
+  }
+  function buildHead() {
+    var fw = jsmafGet('fw_version');
+    var path = jsmafGet('exploit_path');
+    var phase = jsmafGet('relapse_phase');
+    var pins = '';
+    for (var tag of PINS) {
+      var v = board.pins[tag];
+      if (v !== undefined) pins += tag + ': ' + v + '\n';
+    }
+    return 'VUE DEBUG BLACKBOARD ' + BUILD + ' v' + VERSION + ' (' + COMMIT + ')\n' + 'when: ' + timestamp() + '\n' + 'fw: ' + (fw || '?') + '\n' + 'uid: ' + (board.uid === null ? '?' : board.uid) + ' sandbox: ' + (board.sand === null ? '?' : board.sand) + '\n' + 'exploit: ' + (path || '-') + ' phase: ' + (phase || '-') + '\n' + 'kbase: ' + (kbaseHex() || '-') + '\n' + 'stage: ' + board.stage + ' tried: 1=' + (board.tried1 ? 'y' : '-') + ' 2=' + (board.tried2 ? 'y' : '-') + ' 3=' + (board.tried3 ? 'y' : '-') + '\n' + 'sweep: ' + (jsmafGet('sweep_summary') || '-') + '\n' + (pins ? 'pinned:\n' + pins : '') + 'log:\n';
+  }
+
+  // --- USB detection + log dump ----------------------------------------------
+  function findUsb() {
+    for (var id of USB_IDS) {
+      var dir = '/mnt/usb' + id;
+      var fd = openSys(dir + '/vue_debug.txt', O_WRONLY | O_CREAT | O_TRUNC);
+      if (!isError(fd)) {
+        board.usb = dir;
+        board.uid = getUid();
+        board.sand = getSandbox();
+        var ok = writeStr(fd.lo >>> 0, buildHead() + board.history.join('\n') + '\n');
+        closeSys(fd.lo >>> 0);
+        board.logStep = ok ? DONE : FAILED;
+        board.dump = ok ? 'log saved to ' + dir + '/vue_debug.txt' : 'log write failed on ' + dir;
+        return dir;
+      }
+    }
+    board.usb = null;
+    return null;
+  }
+
+  // --- kernel.elf dump --------------------------------------------------------
+  function imageSize(base) {
+    var _kernel$read_buffer, _kernel, _kernel$read_buffer2, _kernel2;
+    var hdr = (_kernel$read_buffer = (_kernel = kernel).read_buffer) === null || _kernel$read_buffer === void 0 ? void 0 : _kernel$read_buffer.call(_kernel, base, 0x40);
+    if (!hdr || hdr.length < 0x40) return {
+      size: DUMP_FALLBACK,
+      elf: false
+    };
+    var magic = hdr[0] === 0x7f && hdr[1] === 0x45 && hdr[2] === 0x4c && hdr[3] === 0x46;
+    if (!magic) return {
+      size: DUMP_FALLBACK,
+      elf: false
+    };
+    var phoff = 0;
+    for (var _i0 = 7; _i0 >= 0; _i0--) phoff = phoff * 256 + hdr[0x20 + _i0];
+    var entsize = hdr[0x36] | hdr[0x37] << 8;
+    var phnum = hdr[0x38] | hdr[0x39] << 8;
+    if (!phoff || !entsize || !phnum || phnum > 32) return {
+      size: DUMP_FALLBACK,
+      elf: true
+    };
+    var ph = (_kernel$read_buffer2 = (_kernel2 = kernel).read_buffer) === null || _kernel$read_buffer2 === void 0 ? void 0 : _kernel$read_buffer2.call(_kernel2, base.add(phoff), entsize * phnum);
+    if (!ph) return {
+      size: DUMP_FALLBACK,
+      elf: true
+    };
+    var end = 0;
+    for (var _i1 = 0; _i1 < phnum; _i1++) {
+      var o = _i1 * entsize;
+      var type = ph[o] | ph[o + 1] << 8 | ph[o + 2] << 16 | ph[o + 3] << 24;
+      if (type !== 1) continue;
+      var poff = 0;
+      for (var b = 7; b >= 0; b--) poff = poff * 256 + ph[o + 0x08 + b];
+      var fsz = 0;
+      for (var _b = 7; _b >= 0; _b--) fsz = fsz * 256 + ph[o + 0x20 + _b];
+      if (poff + fsz > end) end = poff + fsz;
+    }
+    if (end < DUMP_MIN || end > DUMP_MAX) return {
+      size: DUMP_FALLBACK,
+      elf: true
+    };
+    return {
+      size: end,
+      elf: true
+    };
+  }
+  function dumpKernel(dir) {
+    if (board.dumping || board.dumpDone) return;
+    var base = null;
+    try {
+      var k = kernel.addr.base;
+      if (k) base = k;
+    } catch (e) {/* ignore */}
+    if (!base && jsmafGet('kbase')) base = jsmafGet('kbase');
+    if (!base) {
+      board.dump = 'no kbase (exploit did not reach anchor)';
+      board.elfStep = FAILED;
+      board.dumpDone = true;
+      return;
+    }
+    if (!kernel.read_buffer) {
+      board.dump = 'log saved, but no KRW (kernel.elf needs the relapse path)';
+      board.elfStep = FAILED;
+      board.dumpDone = true;
+      return;
+    }
+    board.dumping = true;
+    var info = imageSize(base);
+    board.size = info.size;
+    board.off = 0;
+    var fd = openSys(dir + '/kernel.elf', O_WRONLY | O_CREAT | O_TRUNC);
+    if (isError(fd)) {
+      board.dump = 'cannot create kernel.elf';
+      board.dumping = false;
+      board.elfStep = FAILED;
+      board.dumpDone = true;
+      return;
+    }
+    board.fd = fd.lo >>> 0;
+    board.chunk = new Uint8Array(DUMP_CHUNK);
+    board.bufAddr = utils.get_backing(board.chunk);
+    board.elfStep = RUNNING;
+    board.dump = 'kernel.elf ' + (info.elf ? '(elf ' : '(raw ') + (info.size / 1048576).toFixed(1) + ' MB) starting...';
+    jsmaf.setTimeout(dumpStep, 50);
+  }
+  function dumpStep() {
+    if (board.off >= board.size || !board.chunk || !board.bufAddr) {
+      closeSys(board.fd);
+      board.dumping = false;
+      board.dumpDone = true;
+      board.elfStep = DONE;
+      board.dump = 'OK ' + (board.off / 1048576).toFixed(1) + ' MB -> ' + board.usb + '/kernel.elf';
+      renderSalida();
+      renderFoot();
+      return;
+    }
+    var n = Math.min(DUMP_CHUNK, board.size - board.off);
+    var ok = false;
+    try {
+      var _kernel$read_buffer3, _kernel3;
+      var base = kernel.addr.base || jsmafGet('kbase');
+      var data = (_kernel$read_buffer3 = (_kernel3 = kernel).read_buffer) === null || _kernel$read_buffer3 === void 0 ? void 0 : _kernel$read_buffer3.call(_kernel3, base.add(board.off), n);
+      if (data && data.length === n) {
+        board.chunk.set(data);
+        var r = writeSys(board.fd, board.bufAddr, n);
+        ok = !isError(r) && r.lo === n;
+      }
+    } catch (e) {
+      ok = false;
+    }
+    if (!ok) {
+      closeSys(board.fd);
+      board.dumping = false;
+      board.dumpDone = true;
+      board.elfStep = FAILED;
+      board.dump = 'FAIL at ' + (board.off / 1048576).toFixed(1) + ' MB (krw/usb error)';
+      renderSalida();
+      renderFoot();
+      return;
+    }
+    board.off += n;
+    board.dump = 'kernel.elf ' + (board.off / 1048576).toFixed(1) + '/' + (board.size / 1048576).toFixed(1) + ' MB (' + Math.floor(board.off / board.size * 100) + '%)';
+    renderSalida();
+    renderFoot();
+    jsmaf.setTimeout(dumpStep, 1);
+  }
+
+  // --- boot: debug-friendly config, NO autorun -------------------------------
+  try {
+    if (typeof CONFIG !== 'undefined') {
+      CONFIG.autoclose = false;
+      CONFIG.music = false;
+    }
+  } catch (e) {/* ignore */}
+  jsmafSet('debug_board', true);
+  jsmafSet('debug_manual', true);
+  // expose state for the ws console / local harness (debug build only)
+  jsmafSet('board', board);
+  jsmafSet('ui', ui);
+  jsmafSet('board_build', BUILD);
+  jsmafSet('board_version', VERSION + ' ' + COMMIT);
+  renderAll();
+  pushLine('[board] blackboard ready (build ' + BUILD + ' v' + VERSION + ')');
+  pushLine('[board] no autorun · 6/5 mover · X activar · RUN USERLAND primero');
+
+  // --- watcher: refresh + dump once JB is confirmed -------------------------
+  jsmaf.setInterval(function () {
+    renderHeader();
+    renderStatus();
+    renderFoot();
+    if (board.dumping || board.dumpDone) return;
+    if (!board.autoElf) return;
+    if (board.stage !== 'idle' || !board.preflight) return;
+    if (board.uid !== 0 || board.sand !== 0) return;
+    if (!board.usb && Date.now() - board.lastUsbTry > 10000) {
+      board.lastUsbTry = Date.now();
+      board.usb = findUsb();
+      if (!board.usb) board.dump = 'JB OK but no USB mounted (/mnt/usb0-3/vue_debug.txt)';
+      renderSalida();
+    }
+    if (board.usb) dumpKernel(board.usb);
+  }, 700);
+})();
+
+  } catch (e) { showErr((e && e.stack) || String(e)) }
+  // ---- end theme ----
+
+  
+  // ---- demo run (only for the preview screenshot) ----
+  var K = jsmaf.onKeyDown
+  window.debug_start_relapse = function (n) {
+    window.log('[relapse:START] try 1 maxRetries=' + (n === 3 ? 3 : 0) + ' idt=' + (n === 1 ? '0x1c1d00' : (n === 2 ? '0x1c1d40' : 'auto')))
+    window.log('[relapse:DEBUG-RESET] attempt=' + n + ' retries=' + (n === 3 ? 3 : 0) + ' sweep=' + (n === 3 ? 1 : 0) + ' noFallback=1')
+    if (n === 3) {
+      ['PR-CFG','PR-SATURATE-ENTER','PR-SATURATE','PR-POOL','PR-WORKER-READY','ARM-FIN'].forEach(function (t, i) {
+        window.log('[relapse:' + t + '] step ' + (i + 1) + ' ok')
+      })
+      window.log('[relapse:PR-FIRE] passA nodes=262144 sink_moved=3 node0_sink=1')
+      window.log('[relapse:PR-LEAK] hits=51 walked=30211/262144 uniq=1')
+      window.log('[relapse:SWEEP-OWNER] offset=0x18 hits=163 (default 0x18)')
+      window.log('[relapse:SWEEP-SINK-ADOPT] sink_off -> 0x28 hits=12')
+      window.log('[relapse:PR-PASSA] m=19 -> k=32750')
+      window.log('[relapse:SWEEP-TDUCRED] nocross 0x130 -> try 0x128 (2/4)')
+      window.log('[relapse:PR-UCRED] ucred=0xffff88800a1b2c30')
+      window.log('[relapse:ANCHOR-HANDLER] handler=0xffffffff8022c140')
+      window.log('[relapse:SWEEP-RVA] rva=0x1c1d40 (was 0x1c1d00) aligned 0x4000')
+      window.log('[relapse:ANCHOR-KERNEL-BASE] kernel_base=0xffffffff80200000')
+      jsmaf.relapse_phase = 'FAIL-FINAL'
+      window.log('[relapse:FAIL-FINAL] kf: sysctl oid window did not open')
+      window.log('[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x28 tduc=0x128 anchor-ok')
+    }
+  }
+  K(14)                      // RUN USERLAND
+  K(6); K(14)                // PRUEBA 1
+  K(6); K(14)                // PRUEBA 2
+  K(6); K(14)                // PRUEBA 3 (SWEEP)
+  jsmaf.sweep_summary = 'owner=0x18 sink=0x28 tduc=0x128 anchor-ok'
+  jsmaf.kbase = new BigInt(0xffffffff, 0x80200000)
+  
+
+  // scale to the window
+  var box = document.getElementById('box')
+  function fit () {
+    var s = Math.min(1, (window.innerWidth - 44) / 1920, (window.innerHeight - 44) / 1080)
+    screen.style.transform = 'scale(' + s + ')'
+    box.style.width = (1920 * s) + 'px'
+    box.style.height = (1080 * s) + 'px'
+  }
+  window.addEventListener('resize', fit)
+  fit()
+})()
+</script>
 </body>
 </html>

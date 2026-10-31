@@ -1,22 +1,31 @@
 // ---------------------------------------------------------------------------
-// debug-blackboard theme (manual mode)
+// debug-blackboard theme (manual mode) - layout "blackboard v2"
 //
-// No autorun, no menu, no images, no music. The screen is a blackboard:
-//   left  -> status + buttons (run userland / prueba 1-3 / log paging)
-//   right -> live log ring with synchronous paint (survives a blocked thread)
+//   header : brand + version/build + live chips (fw, uid, sandbox, jb, kbase, t)
+//   left   : ACCIONES (buttons) - ESTADO - SALIDA (usb -> 2 elf) - ULTIMA MARCA
+//   centre : run log, 26 rows, tag column + message column (aligned by x)
+//   right  : MARCAS, the 17 pinned marks as a pipeline map (dim = not reached)
 //
-// The user decides every step. Logs are painted on every log() call, so if the
-// exploit hangs the LAST MARK stays on screen as evidence.
+// No autorun: the user presses RUN USERLAND, then PRUEBA 1/2/3.
+// Every log() call repaints synchronously, so if the exploit blocks the thread
+// the LAST MARK stays on screen as evidence.
+//
+// Nothing here is hardcoded: fw/uid/sandbox/kbase come from syscalls, the
+// version/build come from %VERSION_TAG% / %VERSION_STRING% (replaced by CI).
 // ---------------------------------------------------------------------------
 import { fn, BigInt, mem, utils } from 'download0/types'
 import { kernel } from 'download0/kernel'
 
 ;(function () {
-  const BUILD = 'diag-build-2026-10-29'
+  const BUILD = 'diag-build-2026-10-30'
+  const VERSION_RAW = '%VERSION_TAG%'
+  const COMMIT_RAW = '%VERSION_STRING%'
+  const VERSION = VERSION_RAW.indexOf('%') === 0 ? 'dev' : VERSION_RAW
+  const COMMIT = COMMIT_RAW.indexOf('%') === 0 ? 'local' : COMMIT_RAW
   const RING_MAX = 3000
   const HIST_MAX = 3000
-  const LOG_COLS = 100
-  const LOG_ROWS = 34
+  const LOG_COLS = 78
+  const LOG_ROWS = 26
   const O_WRONLY = 1
   const O_CREAT = 0x200
   const O_TRUNC = 0x400
@@ -26,7 +35,13 @@ import { kernel } from 'download0/kernel'
   const DUMP_MAX = 0x4800000
   const DUMP_FALLBACK = 0x2400000
 
-  // tags that are pinned on the left panel (never scrolled away)
+  // step states for the SALIDA panel
+  const PENDING = 0
+  const RUNNING = 1
+  const DONE = 2
+  const FAILED = 3
+
+  // the pipeline, in order: the rail is a map, not a growing list
   const PINS = [
     'START', 'PR-CFG', 'PR-SATURATE-ENTER', 'PR-SATURATE', 'PR-POOL',
     'PR-WORKER-READY', 'ARM-FIN', 'PR-FIRE', 'PR-LEAK', 'PR-PASSA',
@@ -36,6 +51,7 @@ import { kernel } from 'download0/kernel'
 
   const board = {
     ringT: [] as string[],
+    ringM: [] as string[],
     ringS: [] as string[],
     history: [] as string[],
     paging: false,
@@ -50,11 +66,14 @@ import { kernel } from 'download0/kernel'
     pins: {} as Record<string, string>,
     counts: { rel: 0, net: 0, ldr: 0, board: 0 },
     started: Date.now(),
-    dump: 'DUMP: waiting for JB + USB',
+    dump: 'waiting for JB + USB',
     dumping: false,
     dumpDone: false,
     usb: null as string | null,
     lastUsbTry: 0,
+    autoElf: true,
+    logStep: PENDING,
+    elfStep: PENDING,
     size: 0,
     off: 0,
     fd: -1,
@@ -108,23 +127,39 @@ import { kernel } from 'download0/kernel'
     return j ? hex64(j) : ''
   }
 
-  // --- styles ----------------------------------------------------------------
+  // --- styles (one per colour+size, created once) -----------------------------
   jsmaf.root.children.length = 0
-  new Style({ name: 'bg-title', color: '#FFFFFF', size: 30 })
-  new Style({ name: 'bg-status', color: '#E9ECEF', size: 18 })
-  new Style({ name: 'bg-status-on', color: '#69DB7C', size: 18 })
-  new Style({ name: 'bg-btn', color: '#CED4DA', size: 22 })
-  new Style({ name: 'bg-btn-sel', color: '#FFD43B', size: 22 })
-  new Style({ name: 'bg-btn-off', color: '#6C757D', size: 22 })
-  new Style({ name: 'bg-mark', color: '#FFD43B', size: 19 })
-  new Style({ name: 'bg-hdr', color: '#ADB5BD', size: 17 })
-  new Style({ name: 'bg-pin', color: '#ADB5BD', size: 15 })
-  new Style({ name: 'bg-foot', color: '#868E96', size: 14 })
-  new Style({ name: 'lg-sys', color: '#E9ECEF', size: 17 })
-  new Style({ name: 'lg-rel', color: '#4DABF7', size: 17 })
-  new Style({ name: 'lg-net', color: '#6BCF7F', size: 17 })
-  new Style({ name: 'lg-err', color: '#FF6B6B', size: 17 })
-  new Style({ name: 'lg-warn', color: '#FFA94D', size: 17 })
+  new Style({ name: 'bb-brand', color: '#41B883', size: 34 })
+  new Style({ name: 'bb-name', color: '#FFFFFF', size: 26 })
+  new Style({ name: 'bb-sub', color: '#8A96A3', size: 14 })
+  new Style({ name: 'bb-sec', color: '#8A96A3', size: 13 })
+  new Style({ name: 'bb-rule', color: '#28313B', size: 12 })
+  new Style({ name: 'bb-lbl', color: '#5C6977', size: 11 })
+  new Style({ name: 'bb-val', color: '#E6EAEF', size: 18 })
+  new Style({ name: 'bb-val-ok', color: '#69DB7C', size: 18 })
+  new Style({ name: 'bb-val-bad', color: '#FF6B6B', size: 18 })
+  new Style({ name: 'bb-val-acc', color: '#FFD43B', size: 18 })
+  new Style({ name: 'bb-btn', color: '#CED4DA', size: 20 })
+  new Style({ name: 'bb-btn-sel', color: '#FFD43B', size: 20 })
+  new Style({ name: 'bb-btn-off', color: '#6C757D', size: 20 })
+  new Style({ name: 'bb-mark', color: '#FFD43B', size: 16 })
+  new Style({ name: 'bb-mark2', color: '#8A96A3', size: 16 })
+  new Style({ name: 'bb-pin', color: '#5C6977', size: 12 })
+  new Style({ name: 'bb-pin-val', color: '#95A2AF', size: 13 })
+  new Style({ name: 'bb-pin-bad', color: '#FF9C9C', size: 13 })
+  new Style({ name: 'bb-val-sm', color: '#E6EAEF', size: 14 })
+  new Style({ name: 'bb-val-sm-acc', color: '#FFD43B', size: 14 })
+  new Style({ name: 'bb-foot', color: '#5C6977', size: 13 })
+  new Style({ name: 'lg-sys', color: '#CFD6DE', size: 17 })
+  new Style({ name: 'lg-rel', color: '#A9D3F5', size: 17 })
+  new Style({ name: 'lg-net', color: '#8EE6A6', size: 17 })
+  new Style({ name: 'lg-err', color: '#FF9C9C', size: 17 })
+  new Style({ name: 'lg-warn', color: '#FFC978', size: 17 })
+  new Style({ name: 'lg-tag', color: '#4C5764', size: 17 })
+  new Style({ name: 'lg-tag-rel', color: '#2E7EC4', size: 17 })
+  new Style({ name: 'lg-tag-ok', color: '#3C9D5C', size: 17 })
+  new Style({ name: 'lg-tag-err', color: '#B94A4A', size: 17 })
+  new Style({ name: 'lg-tag-warn', color: '#B8802F', size: 17 })
 
   function mkText (x: number, y: number, style: string) {
     const t = new jsmaf.Text()
@@ -135,34 +170,146 @@ import { kernel } from 'download0/kernel'
     jsmaf.root.children.push(t)
     return t
   }
+  function mkRule (x: number, y: number, n: number) {
+    const t = mkText(x, y, 'bb-rule')
+    t.text = '-'.repeat(n)
+    return t
+  }
+
+  // --- layout ---------------------------------------------------------------
+  // columns: left 32..556 | centre 580..1500 | right 1524..1888
+  const L_X = 32
+  const C_X = 580
+  const M_X = 852
+  const R_X = 1524
+  const BTN_Y = 132
+  const BTN_PITCH = 60
+
+  const CHIPS = [
+    { k: 'FW', w: 66 },
+    { k: 'UID', w: 74 },
+    { k: 'SBX', w: 66 },
+    { k: 'JB', w: 74 },
+    { k: 'KBASE', w: 196 },
+    { k: 'T', w: 78 }
+  ]
 
   const ui = {
-    title: mkText(40, 22, 'bg-title'),
-    status: [] as jsmaf.Text[],
+    brand: mkText(L_X, 24, 'bb-brand'),
+    name: mkText(L_X + 78, 30, 'bb-name'),
+    sub: mkText(L_X, 74, 'bb-sub'),
+    chipsK: [] as jsmaf.Text[],
+    chipsV: [] as jsmaf.Text[],
     btn: [] as jsmaf.Text[],
-    counts: mkText(40, 522, 'bg-hdr'),
-    markHdr: mkText(40, 552, 'bg-hdr'),
+    stK: [] as jsmaf.Text[],
+    stV: [] as jsmaf.Text[],
+    usbK: mkText(L_X, 730, 'bb-lbl'),
+    usbV: mkText(L_X + 46, 724, 'bb-val'),
+    elfN: [] as jsmaf.Text[],
+    elfT: [] as jsmaf.Text[],
+    elfS: [] as jsmaf.Text[],
+    autoK: mkText(L_X, 842, 'bb-lbl'),
+    autoV: mkText(L_X + 92, 836, 'bb-val'),
+    markK: mkText(L_X, 866, 'bb-sec'),
     mark: [] as jsmaf.Text[],
-    pinHdr: mkText(40, 616, 'bg-hdr'),
-    pin: [] as jsmaf.Text[],
-    foot: [] as jsmaf.Text[],
-    logHdr: mkText(680, 22, 'bg-hdr'),
-    log: [] as jsmaf.Text[],
-    logFoot: [] as jsmaf.Text[]
+    logHdr: mkText(C_X, 112, 'bb-sec'),
+    logPage: mkText(C_X + 520, 112, 'bb-sec'),
+    logTag: [] as jsmaf.Text[],
+    logMsg: [] as jsmaf.Text[],
+    logFoot: mkText(C_X, 944, 'bb-foot'),
+    logKeys: mkText(C_X, 968, 'bb-foot'),
+    pinHdr: mkText(R_X, 112, 'bb-sec'),
+    pinCnt: mkText(R_X + 250, 112, 'bb-sec'),
+    pinT: [] as jsmaf.Text[],
+    pinV: [] as jsmaf.Text[],
+    pinFoot: mkText(R_X, 896, 'bb-foot'),
+    foot: mkText(L_X, 1010, 'bb-foot')
   }
-  ui.title.text = 'VUE BLACKBOARD · ' + BUILD
-  for (let i = 0; i < 8; i++) ui.status.push(mkText(40, 68 + i * 21, 'bg-status'))
-  for (let i = 0; i < 6; i++) ui.btn.push(mkText(40, 250 + i * 44, 'bg-btn'))
-  ui.mark.push(mkText(40, 572, 'bg-mark'), mkText(40, 594, 'bg-mark'))
-  for (let i = 0; i < PINS.length; i++) ui.pin.push(mkText(40, 638 + i * 19, 'bg-pin'))
-  for (let i = 0; i < 2; i++) ui.foot.push(mkText(40, 986 + i * 20, 'bg-foot'))
-  for (let i = 0; i < LOG_ROWS; i++) ui.log.push(mkText(680, 50 + i * 26, 'lg-sys'))
-  for (let i = 0; i < 3; i++) ui.logFoot.push(mkText(680, 950 + i * 20, 'bg-foot'))
+
+  ui.brand.text = 'VUE'
+  ui.name.text = 'BLACKBOARD'
+  ui.sub.text = 'relapse-663 · ' + BUILD
+  ui.logHdr.text = 'LOG DE CORRIDA'
+  ui.pinHdr.text = 'MARCAS'
+  ui.markK.text = 'ULTIMA MARCA'
+  ui.usbK.text = 'USB'
+  ui.autoK.text = 'AUTO ELF'
+  mkRule(L_X, 100, 330)
+  mkRule(C_X, 136, 172)
+  mkRule(R_X, 136, 66)
+
+  // section titles
+  mkText(L_X, 108, 'bb-sec').text = 'ACCIONES'
+  mkText(L_X, 544, 'bb-sec').text = 'ESTADO'
+  mkText(L_X, 706, 'bb-sec').text = 'SALIDA'
+
+  const CHIP_GAP = 16
+  {
+    let total = 0
+    for (const c of CHIPS) total += c.w + CHIP_GAP
+    let x = 1888 - total + CHIP_GAP
+    for (const c of CHIPS) {
+      ui.chipsK.push(mkText(x, 26, 'bb-lbl'))
+      ui.chipsV.push(mkText(x, 42, 'bb-val'))
+      ui.chipsK[ui.chipsK.length - 1]!.text = c.k
+      x += c.w + CHIP_GAP
+    }
+  }
+
+  // 7 action buttons
+  for (let i = 0; i < 7; i++) ui.btn.push(mkText(L_X + 12, BTN_Y + i * BTN_PITCH, 'bb-btn'))
+
+  // estado: 3 cells + 2 cells + 1 wide (sweep)
+  const SY = 568
+  const ST_POS = [
+    [L_X, SY], [L_X + 172, SY], [L_X + 344, SY],
+    [L_X, SY + 46], [L_X + 172, SY + 46],
+    [L_X, SY + 92]
+  ]
+  for (let i = 0; i < 6; i++) {
+    const pos = ST_POS[i]!
+    ui.stK.push(mkText(pos[0]!, pos[1]!, 'bb-lbl'))
+    ui.stV.push(mkText(pos[0]!, pos[1]! + 15, 'bb-val'))
+  }
+
+  // salida: 2 elf steps
+  for (let i = 0; i < 2; i++) {
+    ui.elfN.push(mkText(L_X, 764 + i * 36, 'bb-val'))
+    ui.elfT.push(mkText(L_X + 24, 764 + i * 36, 'bb-val'))
+    ui.elfS.push(mkText(L_X + 250, 764 + i * 36, 'bb-val'))
+  }
+
+  // ultima marca: 2 lines
+  ui.mark.push(mkText(L_X, 892, 'bb-mark'), mkText(L_X, 916, 'bb-mark2'))
+
+  // log rows: tag column + message column
+  for (let i = 0; i < LOG_ROWS; i++) {
+    ui.logTag.push(mkText(C_X, 150 + i * 30, 'lg-tag'))
+    ui.logMsg.push(mkText(M_X, 150 + i * 30, 'lg-sys'))
+  }
+
+  // marks rail: 17 items, tag line + value line
+  const PIN_Y = 150
+  const PIN_PITCH = 44
+  for (let i = 0; i < PINS.length; i++) {
+    ui.pinT.push(mkText(R_X, PIN_Y + i * PIN_PITCH, 'bb-pin'))
+    ui.pinV.push(mkText(R_X, PIN_Y + 16 + i * PIN_PITCH, 'bb-pin-val'))
+  }
 
   // --- log capture -----------------------------------------------------------
   const nativeLog = (typeof log === 'function') ? log : null
   const nativeDebug = (typeof debug === 'function') ? debug : null
   let logPatched = false
+
+  function splitTag (msg: string) {
+    if (msg.charAt(0) !== '[') return { tag: '', msg }
+    const end = msg.indexOf(']')
+    if (end < 0 || end > 34) return { tag: '', msg }
+    let tag = msg.slice(1, end)
+    const colon = tag.indexOf(':')
+    if (colon >= 0) tag = tag.slice(colon + 1)
+    return { tag, msg: msg.slice(end + 1).trim() }
+  }
 
   function sourceStyle (msg: string) {
     if (msg.indexOf('FAIL') >= 0 || msg.indexOf('ERROR') >= 0 || msg.indexOf('NOCROSS') >= 0 ||
@@ -173,6 +320,14 @@ import { kernel } from 'download0/kernel'
     return 'lg-sys'
   }
 
+  function tagStyle (st: string) {
+    if (st === 'lg-err') return 'lg-tag-err'
+    if (st === 'lg-warn') return 'lg-tag-warn'
+    if (st === 'lg-rel') return 'lg-tag-rel'
+    if (st === 'lg-net') return 'lg-tag-ok'
+    return 'lg-tag'
+  }
+
   function bumpCounts (msg: string) {
     if (msg.indexOf('[relapse:') >= 0) board.counts.rel++
     else if (msg.indexOf('[netctrl') >= 0 || msg.indexOf('kqueue') >= 0) board.counts.net++
@@ -181,20 +336,17 @@ import { kernel } from 'download0/kernel'
   }
 
   function trackPins (msg: string) {
-    const at = msg.indexOf('[relapse:')
-    if (at < 0) return
-    const endTag = msg.indexOf(']', at)
-    if (endTag < 0) return
-    const tag = msg.slice(at + 9, endTag)
-    if (PINS.indexOf(tag) < 0) return
-    board.pins[tag] = msg.slice(endTag + 1).trim().slice(0, 92)
+    const p = splitTag(msg)
+    if (p.tag === '' || PINS.indexOf(p.tag) < 0) return
+    board.pins[p.tag] = p.msg.slice(0, 92)
     repaintPins()
   }
 
   function trackLastMark (msg: string) {
     if (msg.charAt(0) !== '[') return
     if (msg.indexOf('[board]') === 0) return
-    board.lastMark = msg.slice(0, 120)
+    const p = splitTag(msg)
+    board.lastMark = (p.tag ? p.tag + ' · ' : '') + p.msg
     paintLastMark()
   }
 
@@ -203,16 +355,19 @@ import { kernel } from 'download0/kernel'
     board.history.push(msg)
     if (board.history.length > HIST_MAX) board.history.shift()
     const st = sourceStyle(msg)
+    const p = splitTag(msg)
+    const body = p.msg.length > 0 ? p.msg : msg
     let off = 0
     do {
-      const chunk = msg.slice(off, off + LOG_COLS)
-      board.ringT.push(chunk)
+      board.ringT.push(off === 0 ? p.tag : '')
+      board.ringM.push(body.slice(off, off + LOG_COLS))
       board.ringS.push(st)
       off += LOG_COLS
-    } while (off < msg.length)
+    } while (off < body.length)
     const drop = board.ringT.length - RING_MAX
     if (drop > 0) {
       board.ringT.splice(0, drop)
+      board.ringM.splice(0, drop)
       board.ringS.splice(0, drop)
     }
     bumpCounts(msg)
@@ -240,82 +395,171 @@ import { kernel } from 'download0/kernel'
   } catch (e) { /* debug stays native */ }
 
   // --- painters --------------------------------------------------------------
+  function setText (t: jsmaf.Text, v: string, style?: string) {
+    if (t.text !== v) t.text = v
+    if (style !== undefined && t.style !== style) t.style = style
+  }
+
   function repaintLog () {
     if (!board.paging) board.viewStart = Math.max(0, board.ringT.length - LOG_ROWS)
     let start = board.viewStart
-    if (start > Math.max(0, board.ringT.length - LOG_ROWS)) start = Math.max(0, board.ringT.length - LOG_ROWS)
+    const tail = Math.max(0, board.ringT.length - LOG_ROWS)
+    if (start > tail) start = tail
     for (let i = 0; i < LOG_ROWS; i++) {
       const idx = start + i
-      const t = ui.log[i]!
       if (idx < board.ringT.length) {
-        t.text = board.ringT[idx]!
-        t.style = board.ringS[idx]!
+        const st = board.ringS[idx]!
+        setText(ui.logTag[i]!, board.ringT[idx]!, tagStyle(st))
+        setText(ui.logMsg[i]!, board.ringM[idx]!, st)
       } else {
-        t.text = ''
+        setText(ui.logTag[i]!, '')
+        setText(ui.logMsg[i]!, '')
       }
     }
     const pages = Math.max(1, Math.ceil(board.ringT.length / LOG_ROWS))
-    const page = Math.min(pages, Math.floor(start / LOG_ROWS) + 1)
-    ui.logHdr.text = 'LOG · pág ' + page + '/' + pages + ' · ring ' + board.ringT.length + '/' + RING_MAX +
-      (board.paging ? ' · SCROLL' : ' · tail')
+    const page = Math.max(1, Math.min(pages, Math.ceil((start + LOG_ROWS) / LOG_ROWS)))
+    setText(ui.logPage, 'pág ' + page + '/' + pages + ' · ring ' + board.ringT.length + '/' + RING_MAX +
+      (board.paging ? ' · SCROLL' : ' · tail'))
   }
 
   function repaintPins () {
+    let reached = 0
+    let lastReached = -1
     for (let i = 0; i < PINS.length; i++) {
       const tag = PINS[i]!
       const val = board.pins[tag]
-      ui.pin[i]!.text = val === undefined ? tag + ' ·' : tag + ' ' + val
-      ui.pin[i]!.style = val === undefined ? 'bg-pin' : 'bg-status'
+      const has = val !== undefined
+      if (has) { reached++; lastReached = i }
+      setText(ui.pinT[i]!, (i === lastReached ? '> ' : '  ') + tag, 'bb-pin')
+      setText(ui.pinV[i]!, '   ' + (has ? val.slice(0, 48) : 'no alcanzado'),
+        has ? (tag === 'FAIL-FINAL' ? 'bb-pin-bad' : 'bb-pin-val') : 'bb-pin')
+      ui.pinT[i]!.alpha = has ? 1 : 0.55
+      ui.pinV[i]!.alpha = has ? 1 : 0.3
     }
+    setText(ui.pinCnt, reached + '/' + PINS.length)
+    const nextIdx = lastReached + 1
+    setText(ui.pinFoot, nextIdx < PINS.length ? 'siguiente · ' + PINS[nextIdx]! : 'pipeline completo')
   }
 
   function paintLastMark () {
-    const a = board.lastMark.slice(0, 56)
-    const b = board.lastMark.length > 56 ? board.lastMark.slice(56, 120) : ''
-    ui.mark[0]!.text = 'LAST ' + a
-    ui.mark[1]!.text = b ? '     ' + b : ''
+    const s = board.lastMark
+    let a = s.slice(0, 56)
+    let b = ''
+    if (s.length > 56) {
+      let cut = s.lastIndexOf(' ', 56)
+      if (cut < 32) cut = 56
+      a = s.slice(0, cut)
+      b = s.slice(cut).trim()
+    }
+    setText(ui.mark[0]!, a || '-')
+    setText(ui.mark[1]!, b ? '   ' + b : '')
   }
 
   function readCreds () {
     if (!board.preflight) return
     if (board.stage === 'preflight' || board.stage === 'prueba') return
-    if (board.stage !== 'idle' && !jsmaf.vue_exploit_done) return
     const u = getUid()
     const s = getSandbox()
     if (u !== null) board.uid = u
     if (s !== null) board.sand = s
   }
 
-  function renderStatus () {
-    readCreds()
+  function renderHeader () {
     const fw = jsmafGet('fw_version') as string | undefined
+    const jb = board.uid === 0 && board.sand === 0
+    const kb = kbaseHex()
+    const elapsed = Math.floor((Date.now() - board.started) / 1000)
+    const mm = Math.floor(elapsed / 60)
+    const ss = elapsed % 60
+    setText(ui.chipsV[0]!, fw || '?', 'bb-val')
+    setText(ui.chipsV[1]!, board.uid === null ? '?' : String(board.uid))
+    setText(ui.chipsV[2]!, board.sand === null ? '?' : String(board.sand))
+    setText(ui.chipsV[3]!, jb ? 'YES' : 'no', jb ? 'bb-val-ok' : 'bb-val-bad')
+    setText(ui.chipsV[4]!, kb || '(pendiente)', kb ? 'bb-val-acc' : 'bb-val')
+    setText(ui.chipsV[5]!, (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss)
+    setText(ui.sub, 'relapse-663 · ' + BUILD + ' · v' + VERSION + ' (' + COMMIT + ')')
+  }
+
+  function renderStatus () {
     const path = jsmafGet('exploit_path') as string | undefined
     const phase = jsmafGet('relapse_phase') as string | undefined
     const done = !!jsmaf.vue_exploit_done
-    const uid = board.uid
-    const sand = board.sand
-    const jb = uid === 0 && sand === 0
-    const kbase = kbaseHex()
-    const elapsed = ((Date.now() - board.started) / 1000).toFixed(1)
     const act = jsmafGet('relapse_activity') as number | undefined
     const idle = act ? ((Date.now() - act) / 1000).toFixed(1) + 's' : '-'
-    ui.status[0]!.text = 'FW ' + (fw || '?') + '    uid ' + (uid === null ? '?' : uid) +
-      '    sandbox ' + (sand === null ? '?' : sand) + '    JB ' + (jb ? 'YES' : 'no')
-    ui.status[0]!.style = jb ? 'bg-status-on' : 'bg-status'
-    ui.status[1]!.text = 'stage ' + board.stage + (done ? ' · EXPLOIT DONE' : '') + '    t ' + elapsed + 's    idle ' + idle
-    ui.status[2]!.text = 'path ' + (path || '-')
-    ui.status[3]!.text = 'phase ' + (phase || '-')
-    ui.status[4]!.text = 'kbase ' + (kbase || '(pendiente)')
-    ui.status[5]!.text = 'preflight ' + (board.preflight ? 'done' : 'pending') +
-      (logPatched ? ' · log ON' : ' · log OFF')
-    ui.status[6]!.text = 'swp ' + ((jsmafGet('sweep_summary') as string | undefined) || '-')
-    ui.status[7]!.text = 'tried 1:' + (board.tried1 ? 'y' : '-') + ' 2:' + (board.tried2 ? 'y' : '-') + ' 3:' + (board.tried3 ? 'y' : '-')
-    ui.counts.text = 'lines rel ' + board.counts.rel + ' · net ' + board.counts.net +
-      ' · ldr ' + board.counts.ldr + ' · board ' + board.counts.board
-    ui.foot[0]!.text = board.dump
-    ui.foot[1]!.text = 'writes ' + board.history.length + ' msgs · USB ' + (board.usb || 'none')
-    ui.logFoot[0]!.text = 'teclas: 6/5 ↓ · 4/7 ↑ · X activa'
-    ui.logFoot[1]!.text = 'knobs ' + knobLine()
+    const swp = (jsmafGet('sweep_summary') as string | undefined) || '-'
+    const keys = ['stage', 'phase', 'idle', 'path', 'preflight', 'sweep']
+    const vals = [
+      board.stage + (done ? ' · DONE' : ''),
+      phase || '-',
+      idle,
+      path || '-',
+      board.preflight ? 'done' : 'pending',
+      swp
+    ]
+    const styles = [
+      'bb-val',
+      phase !== undefined && phase.indexOf('FAIL') >= 0 ? 'bb-val-bad' : 'bb-val',
+      'bb-val', 'bb-val',
+      board.preflight ? 'bb-val-ok' : 'bb-val',
+      'bb-val-sm-acc'
+    ]
+    for (let i = 0; i < keys.length; i++) {
+      setText(ui.stK[i]!, keys[i]!.toUpperCase())
+      setText(ui.stV[i]!, vals[i]!, styles[i])
+    }
+  }
+
+  function elfStateText (step: number) {
+    if (step === DONE) return 'ok'
+    if (step === FAILED) return 'fail'
+    if (step === RUNNING) return 'run'
+    return 'pendiente'
+  }
+
+  function renderSalida () {
+    if (board.usb) {
+      setText(ui.usbV, board.usb, 'bb-val-ok')
+    } else if (board.uid === 0 && board.sand === 0) {
+      setText(ui.usbV, 'sin USB (jb ok, buscando)', 'bb-val-sm-acc')
+    } else {
+      setText(ui.usbV, 'esperando JB', 'bb-val')
+    }
+    setText(ui.elfN[0]!, '1')
+    setText(ui.elfT[0]!, 'kernel.elf')
+    let elfTxt = elfStateText(board.elfStep)
+    if (board.elfStep === RUNNING) {
+      elfTxt = (board.off / 1048576).toFixed(1) + '/' + (board.size / 1048576).toFixed(1) + ' MB'
+    } else if (board.elfStep === DONE) {
+      elfTxt = 'ok ' + (board.off / 1048576).toFixed(1) + ' MB'
+    }
+    setText(ui.elfS[0]!, elfTxt,
+      board.elfStep === DONE ? 'bb-val-ok' : (board.elfStep === FAILED ? 'bb-val-bad' : 'bb-val'))
+    setText(ui.elfN[1]!, '2')
+    setText(ui.elfT[1]!, 'vue_debug.txt')
+    const logTxt = board.logStep === DONE
+      ? 'ok ' + board.history.length + ' msgs'
+      : (board.logStep === FAILED ? 'fail' : 'pendiente')
+    setText(ui.elfS[1]!, logTxt,
+      board.logStep === DONE ? 'bb-val-ok' : (board.logStep === FAILED ? 'bb-val-bad' : 'bb-val'))
+    setText(ui.autoV, board.autoElf ? '[x] tras JB' : '[ ] manual',
+      board.autoElf ? 'bb-val-ok' : 'bb-val')
+  }
+
+  function renderFoot () {
+    setText(ui.logFoot, 'tried 1:' + (board.tried1 ? 'y' : '-') + ' 2:' + (board.tried2 ? 'y' : '-') +
+      ' 3:' + (board.tried3 ? 'y' : '-') + ' · rel ' + board.counts.rel + ' · net ' + board.counts.net +
+      ' · ldr ' + board.counts.ldr + ' · board ' + board.counts.board + ' · ' + board.history.length + ' msgs')
+    setText(ui.logKeys, 'teclas 6/5 mover · X activar · 4/7 atrás' + (logPatched ? '' : ' · log OFF'))
+    setText(ui.foot, board.dump + '  ·  knobs ' + knobLine())
+  }
+
+  function renderAll () {
+    readCreds()
+    renderHeader()
+    renderStatus()
+    renderSalida()
+    renderFoot()
+    repaintPins()
     updateButtons()
   }
 
@@ -327,35 +571,35 @@ import { kernel } from 'download0/kernel'
         const v = c[k]
         return typeof v === 'number' && v > 0 ? v : d
       }
-      return 'rel retry=' + g('relapse_retries', 3) + ' spin=' + g('relapse_spin', 40000000) +
-        ' towait=' + g('relapse_towait', 1000) + ' | nc kq=' + g('nc_kqueue_iters', 5000)
+      return 'retry=' + g('relapse_retries', 3) + ' spin=' + g('relapse_spin', 40000000) +
+        ' towait=' + g('relapse_towait', 1000)
     } catch (e) { return '-' }
   }
 
   // --- buttons ---------------------------------------------------------------
-  const BUTTONS = ['run.userland', 'prueba1', 'prueba2', 'prueba3', 'log.up', 'log.down']
+  const BUTTONS = ['run.userland', 'prueba1', 'prueba2', 'prueba3', 'auto.elf', 'log.up', 'log.down']
 
+  function sweepReady () {
+    if (board.pins['PR-FIRE'] || board.pins['PR-LEAK'] || board.pins['PR-PASSA-NOCROSS'] || jsmafGet('sweep_ready')) return true
+    return !!(board.tried1 && board.tried2)
+  }
   function btnEnabled (id: string) {
     if (id === 'run.userland') return !board.preflight
     if (id === 'prueba1' || id === 'prueba2') return board.preflight && board.stage !== 'prueba'
     if (id === 'prueba3') return board.preflight && sweepReady()
+    if (id === 'auto.elf') return true
     if (id === 'log.up') return board.ringT.length > LOG_ROWS
     if (id === 'log.down') return board.paging
     return false
   }
-  function sweepReady () {
-    if (board.pins['PR-FIRE'] || board.pins['PR-LEAK'] || board.pins['PR-PASSA-NOCROSS'] || jsmafGet('sweep_ready')) return true
-    // nothing to observe (e.g. the leak never completed): allow the diagnostic
-    // sweep anyway once both single-shot tries have been used
-    return !!(board.tried1 && board.tried2)
-  }
   function btnLabel (id: string) {
-    if (id === 'run.userland') return board.preflight ? 'RUN USERLAND (preflight ok)' : 'RUN USERLAND'
-    if (id === 'prueba1') return 'PRUEBA 1 — relapse (IDT 1c1d00, 1 intento)'
-    if (id === 'prueba2') return 'PRUEBA 2 — relapse (IDT-ALT 1c1d40)'
-    if (id === 'prueba3') return sweepReady() ? 'PRUEBA 3 — SWEEP (auto)' : 'PRUEBA 3 — SWEEP (sin datos)'
-    if (id === 'log.up') return 'LOG ▲ (más viejo)'
-    if (id === 'log.down') return 'LOG ▼ (más nuevo)'
+    if (id === 'run.userland') return 'RUN USERLAND'
+    if (id === 'prueba1') return 'PRUEBA 1'
+    if (id === 'prueba2') return 'PRUEBA 2'
+    if (id === 'prueba3') return 'PRUEBA 3 - SWEEP'
+    if (id === 'auto.elf') return board.autoElf ? 'AUTO ELF  [x]' : 'AUTO ELF  [ ]'
+    if (id === 'log.up') return 'LOG ▲'
+    if (id === 'log.down') return 'LOG ▼'
     return id
   }
 
@@ -365,16 +609,14 @@ import { kernel } from 'download0/kernel'
       const sel = i === board.sel
       const on = btnEnabled(id)
       const t = ui.btn[i]!
-      t.x = 16
-      t.y = 250 + i * 44
-      t.text = (sel ? '> ' : '  ') + btnLabel(id)
-      t.style = sel ? (on ? 'bg-btn-sel' : 'bg-btn-off') : (on ? 'bg-btn' : 'bg-btn-off')
-      t.alpha = on ? 1 : 0.45
-      t.scaleX = sel ? 1.05 : 1
-      t.scaleY = sel ? 1.05 : 1
-      t.color = '#FFFFFF'
+      t.x = L_X + (sel ? 16 : 12)
+      t.y = BTN_Y + i * BTN_PITCH
+      setText(t, (sel ? '[> ' : '[  ') + btnLabel(id) + ' ]',
+        sel ? (on ? 'bb-btn-sel' : 'bb-btn-off') : (on ? 'bb-btn' : 'bb-btn-off'))
+      t.alpha = on ? 1 : 0.4
+      t.scaleX = sel ? 1.08 : 1
+      t.scaleY = sel ? 1.08 : 1
     }
-    repaintPins()
   }
 
   function pageBy (dir: number) {
@@ -387,7 +629,10 @@ import { kernel } from 'download0/kernel'
       }
     } else if (board.paging) {
       board.viewStart += LOG_ROWS
-      if (board.viewStart + LOG_ROWS >= board.ringT.length) board.paging = false
+      if (board.viewStart + LOG_ROWS >= board.ringT.length) {
+        board.viewStart = Math.max(0, board.ringT.length - LOG_ROWS)
+        board.paging = false
+      }
     }
     repaintLog()
     updateButtons()
@@ -419,8 +664,7 @@ import { kernel } from 'download0/kernel'
     board.sand = getSandbox()
     pushLine('[board] preflight returned: fw=' + (jsmafGet('fw_version') as string || '?') +
       ' uid=' + (board.uid === null ? '?' : board.uid) + ' sandbox=' + (board.sand === null ? '?' : board.sand))
-    renderStatus()
-    updateButtons()
+    renderAll()
   }
 
   function runPrueba (n: number) {
@@ -454,8 +698,7 @@ import { kernel } from 'download0/kernel'
     }
     board.stage = 'idle'
     pushLine('[board] PRUEBA ' + n + ' returned' + (jsmaf.vue_exploit_done ? ' (EXPLOIT DONE)' : ''))
-    renderStatus()
-    updateButtons()
+    renderAll()
   }
 
   function activate () {
@@ -468,7 +711,12 @@ import { kernel } from 'download0/kernel'
     else if (id === 'prueba1') runPrueba(1)
     else if (id === 'prueba2') runPrueba(2)
     else if (id === 'prueba3') runPrueba(3)
-    else if (id === 'log.up') pageBy(1)
+    else if (id === 'auto.elf') {
+      board.autoElf = !board.autoElf
+      pushLine('[board] AUTO ELF ' + (board.autoElf ? 'ON' : 'OFF') + ' (JB -> usb -> kernel.elf + vue_debug.txt)')
+      renderSalida()
+      updateButtons()
+    } else if (id === 'log.up') pageBy(1)
     else if (id === 'log.down') pageBy(-1)
   }
 
@@ -548,7 +796,7 @@ import { kernel } from 'download0/kernel'
       const v = board.pins[tag]
       if (v !== undefined) pins += tag + ': ' + v + '\n'
     }
-    const head = 'VUE DEBUG BLACKBOARD ' + BUILD + '\n' +
+    return 'VUE DEBUG BLACKBOARD ' + BUILD + ' v' + VERSION + ' (' + COMMIT + ')\n' +
       'when: ' + timestamp() + '\n' +
       'fw: ' + (fw || '?') + '\n' +
       'uid: ' + (board.uid === null ? '?' : board.uid) + ' sandbox: ' + (board.sand === null ? '?' : board.sand) + '\n' +
@@ -558,7 +806,6 @@ import { kernel } from 'download0/kernel'
       'sweep: ' + ((jsmafGet('sweep_summary') as string | undefined) || '-') + '\n' +
       (pins ? 'pinned:\n' + pins : '') +
       'log:\n'
-    return head
   }
 
   // --- USB detection + log dump ----------------------------------------------
@@ -570,9 +817,10 @@ import { kernel } from 'download0/kernel'
         board.usb = dir
         board.uid = getUid()
         board.sand = getSandbox()
-        writeStr(fd.lo >>> 0, buildHead() + board.history.join('\n') + '\n')
+        const ok = writeStr(fd.lo >>> 0, buildHead() + board.history.join('\n') + '\n')
         closeSys(fd.lo >>> 0)
-        board.dump = 'DUMP: log saved to ' + dir + '/vue_debug.txt'
+        board.logStep = ok ? DONE : FAILED
+        board.dump = ok ? 'log saved to ' + dir + '/vue_debug.txt' : 'log write failed on ' + dir
         return dir
       }
     }
@@ -617,12 +865,14 @@ import { kernel } from 'download0/kernel'
     } catch (e) { /* ignore */ }
     if (!base && jsmafGet('kbase')) base = jsmafGet('kbase') as BigInt
     if (!base) {
-      board.dump = 'DUMP: no kbase (exploit did not reach anchor)'
+      board.dump = 'no kbase (exploit did not reach anchor)'
+      board.elfStep = FAILED
       board.dumpDone = true
       return
     }
     if (!kernel.read_buffer) {
-      board.dump = 'DUMP: log saved, but no KRW (kernel.elf needs the relapse path)'
+      board.dump = 'log saved, but no KRW (kernel.elf needs the relapse path)'
+      board.elfStep = FAILED
       board.dumpDone = true
       return
     }
@@ -632,15 +882,17 @@ import { kernel } from 'download0/kernel'
     board.off = 0
     const fd = openSys(dir + '/kernel.elf', O_WRONLY | O_CREAT | O_TRUNC)
     if (isError(fd)) {
-      board.dump = 'DUMP: cannot create kernel.elf'
+      board.dump = 'cannot create kernel.elf'
       board.dumping = false
+      board.elfStep = FAILED
       board.dumpDone = true
       return
     }
     board.fd = fd.lo >>> 0
     board.chunk = new Uint8Array(DUMP_CHUNK)
     board.bufAddr = utils.get_backing(board.chunk)
-    board.dump = 'DUMP: kernel.elf ' + (info.elf ? '(elf ' : '(raw ') + (info.size / 1048576).toFixed(1) + ' MB) starting...'
+    board.elfStep = RUNNING
+    board.dump = 'kernel.elf ' + (info.elf ? '(elf ' : '(raw ') + (info.size / 1048576).toFixed(1) + ' MB) starting...'
     jsmaf.setTimeout(dumpStep, 50)
   }
 
@@ -649,7 +901,10 @@ import { kernel } from 'download0/kernel'
       closeSys(board.fd)
       board.dumping = false
       board.dumpDone = true
-      board.dump = 'DUMP: OK ' + (board.off / 1048576).toFixed(1) + ' MB -> ' + board.usb + '/kernel.elf'
+      board.elfStep = DONE
+      board.dump = 'OK ' + (board.off / 1048576).toFixed(1) + ' MB -> ' + board.usb + '/kernel.elf'
+      renderSalida()
+      renderFoot()
       return
     }
     const n = Math.min(DUMP_CHUNK, board.size - board.off)
@@ -668,13 +923,17 @@ import { kernel } from 'download0/kernel'
       closeSys(board.fd)
       board.dumping = false
       board.dumpDone = true
-      board.dump = 'DUMP: FAIL at ' + (board.off / 1048576).toFixed(1) + ' MB (krw/usb error)'
+      board.elfStep = FAILED
+      board.dump = 'FAIL at ' + (board.off / 1048576).toFixed(1) + ' MB (krw/usb error)'
+      renderSalida()
+      renderFoot()
       return
     }
     board.off += n
-    const pct = Math.floor((board.off / board.size) * 100)
-    board.dump = 'DUMP: kernel.elf ' + (board.off / 1048576).toFixed(1) + '/' + (board.size / 1048576).toFixed(1) +
-      ' MB (' + pct + '%)'
+    board.dump = 'kernel.elf ' + (board.off / 1048576).toFixed(1) + '/' + (board.size / 1048576).toFixed(1) +
+      ' MB (' + Math.floor((board.off / board.size) * 100) + '%)'
+    renderSalida()
+    renderFoot()
     jsmaf.setTimeout(dumpStep, 1)
   }
 
@@ -691,24 +950,26 @@ import { kernel } from 'download0/kernel'
   jsmafSet('board', board)
   jsmafSet('ui', ui)
   jsmafSet('board_build', BUILD)
+  jsmafSet('board_version', VERSION + ' ' + COMMIT)
 
-  repaintPins()
-  paintLastMark()
-  renderStatus()
-  repaintLog()
-  pushLine('[board] blackboard ready (build ' + BUILD + ') — no autorun, press RUN USERLAND')
-  pushLine('[board] left: buttons + status + pinned marks · right: live log (LOG ▲/▼)')
+  renderAll()
+  pushLine('[board] blackboard ready (build ' + BUILD + ' v' + VERSION + ')')
+  pushLine('[board] no autorun · 6/5 mover · X activar · RUN USERLAND primero')
 
-  // --- watcher: status + dump once JB is confirmed ---------------------------
+  // --- watcher: refresh + dump once JB is confirmed -------------------------
   jsmaf.setInterval(function () {
+    renderHeader()
     renderStatus()
+    renderFoot()
     if (board.dumping || board.dumpDone) return
+    if (!board.autoElf) return
     if (board.stage !== 'idle' || !board.preflight) return
     if (board.uid !== 0 || board.sand !== 0) return
     if (!board.usb && Date.now() - board.lastUsbTry > 10000) {
       board.lastUsbTry = Date.now()
       board.usb = findUsb()
-      if (!board.usb) board.dump = 'DUMP: JB OK but no USB mounted (/mnt/usb0-3/vue_debug.txt)'
+      if (!board.usb) board.dump = 'JB OK but no USB mounted (/mnt/usb0-3/vue_debug.txt)'
+      renderSalida()
     }
     if (board.usb) dumpKernel(board.usb)
   }, 700)

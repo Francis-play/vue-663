@@ -2,7 +2,7 @@
 
 ## Proyecto activo
 - Repo: `vue-663` (`github.com/Francis-play/vue-663.git`)
-- Rama: `debug-blackboard` (HEAD `ebabd57`)
+- Rama: `debug-blackboard` (HEAD local, ver `git log -1`)
 - Build: `diag-build-2026-10-29`
 - Root: `E:/laragon/tmp/vue/vue-663`
 
@@ -22,18 +22,26 @@
 - Fix aplicado: `main.ts` reescrito sin autorun (`runUserland()` manual), con `pushLine()` que pinta síncrono (`repaintLog()` inmediato), sin timer como único mecanismo.
 
 ## Estado actual del código (2026-10-30)
-- `main.ts`: pizarra manual (botones a la izquierda, log a la derecha, ring 3000, pins 17, sin autorun, `jsmaf.debug_manual` = true, `jsmaf.board_build` expuesto para harness, `sweepReady()` actualizado para permitir prueba 3 cuando `tried1 && tried2`).
+- `main.ts`: pizarra manual **layout v2** (`BUILD=diag-build-2026-10-30`), sin autorun.
+  - cabecera: `VUE` (verde) + `BLACKBOARD` + `relapse-663 · <BUILD> · v<VER> (<COMMIT>)`; chips a la derecha `FW / UID / SBX / JB / KBASE / T`.
+  - izquierda: `ACCIONES` (7 botones tipo ficha con `[> ... ]` y `scaleX/Y`), `ESTADO` (6 celdas), `SALIDA` (USB → 2 ELF), `ULTIMA MARCA` (2 líneas, corte por palabra).
+  - centro: log de 26 filas con **columna de tag fija** (x=580) y **columna de mensaje** (x=852), `LOG_COLS=78`, paginado por `LOG_ROWS`, contador `pág n/m · ring x/3000 · tail|SCROLL`.
+  - derecha: `MARCAS` 17 fijas (mapa de pipeline, `alpha` 0.55/0.3 si no alcanzada), `> ` en la última alcanzada, contador `n/17` y pie `siguiente · <tag>`.
+  - Los `Style` se crean una sola vez (GC desactivado); `repaintLog()` se llama síncrono desde `pushLine()`.
+  - Nada hardcodeado: `fw_version`, `uid`, `sandbox`, `kbase` salen de syscalls/`kernel.addr.base`; versión/build desde `%VERSION_TAG%` / `%VERSION_STRING%` (CI los reemplaza; en local cae a `dev/local`).
 - `loader.ts`: `manual` branch (`jsmaf.debug_manual` corta antes del dispatch), `debug_start_relapse(attempt)` exportado (`1=0x1c1d00`, `2=0x1c1d40`, `3=auto+rva/sink/td_ucred sweep`).
 - `relapse.ts`: `MAX_RETRIES`, `OWNER_LO/HI`, `N0SINK_OFF`, `TD_UCRED_OFF` como `let`; `FORCE_IDT`; `SWEEP_MODE`; `NO_FALLBACK`; `relapse_debug_reset()`; barridos: `sweepScanOwners()` (cada 512 iteraciones, acepta 49 hits), `whoHasF()` con sink scan + adopción (`SWEEP-SINK-ADOPT`), `relapse_pass()` con `tducTry` (0x130 → 0x128 → 0x138 → 0x140), `relapse_anchor_head()` con `RVA_CANDS` auto-solve.
 - `preview.html`: mock web con controles (`simPreflight`, `simFailEarly`, `simAnchorFail`, `simSweep`, etc.).
-- `preview1.html`: vista literal 1920x1080 (sin escalado, sin controles HTML externos) exactamente como `main.ts` pinta en la TV.
+- `preview1.html`: **generado** por `node tools/gen-preview.mjs [boot]` desde `dist/.../main.js` real (cada `Text`/`Style` del tema se convierte en un div posicionado a 1920×1080 y se escala a la ventana). `boot` = estado inicial, sin argumento = corrida demo completa.
 
 ## Pendiente / Recurrente
 - [x] `context.md` creado (ver este archivo).
 - [x] **Lint (eslint) corrido y limpio**: `main.ts`, `loader.ts`, `relapse.ts` → 0 errores (con `NODE_OPTIONS=--max-old-space-size=768`, archivo por archivo para evitar OOM).
 - [x] **Build local OK**: `babel main.ts` → `dist/download0/themes/default/main.js` sin error (con `--max-old-space-size=900`).
-- [x] **Smoke test OK**: `C:\Users\Franc\AppData\Local\Temp\opencode\smoke-blackboard.mjs` → SMOKE-OK (todas las aserciones: 34 filas log, 17 pins, 6 botones, 8 status, teclas, preflight, gates, pines, paginado).
+- [x] **Smoke test OK**: `C:\Users\Franc\AppData\Local\Temp\opencode\smoke-blackboard.mjs` → SMOKE-OK (26 filas log, 17 pins, 7 botones, 6 status, 6 chips, teclas, preflight, gates, pines, paginado).
+- [x] **Layout v2 portado a `main.ts`** (acciones tipo botón + rail de marcas fijo + panel SALIDA con USB→2 ELF) y verificado con captura headless (`real6.png` demo, `boot1.png` estado inicial).
 - [ ] Persistencia automática de contexto entre sesiones (definida en `tropiezos.md` #8, aún manual).
+- [ ] Probar en consola real: RUN USERLAND → PRUEBA 1 → reiniciar → PRUEBA 2 → PRUEBA 3.
 - [x] `tropiezos.md` con los puntos nuevos.
 
 ## Bug encontrado y corregido en esta sesión (importante)
@@ -54,7 +62,7 @@
 - `E:\laragon\www\v3-rn` no tiene exclusión de Defender (requiere admin, pendiente).
 
 ## Datos recientes del proyecto
-- Commit: `ebabd57` (`vue-663(debug): pizarra manual blackboard...`)
+- Commit: ver `git log -1` (prefijo `vue-663(debug):`)
 - Rama: `debug-blackboard` (`origin` apuntando a `francis-play/vue-663`)
 - Archivo: `E:\laragon\tmp\vue\vue-663\context.md` (este archivo)
 - Fecha: 2026-10-30 (viernes)
@@ -62,6 +70,6 @@
 
 ## Notas rápidas (para la próxima sesión)
 - Si `babel` falla de nuevo: usar `node -e` nunca con `"` anidados; escribir `.mjs` temporal (`C:\Users\Franc\AppData\Local\Temp\opencode\*.mjs`).
-- `preview.html` = simulación interactiva; `preview1.html` = captura literal del dashboard final.
+- `preview.html` = simulación interactiva; `preview1.html` = render literal generado con `node tools/gen-preview.mjs` (se regenera tras cada build; no editar a mano).
 - `main.ts` no usa autorun (`no autorun` en el mensaje inicial); el usuario debe presionar `RUN USERLAND` primero.
 - `runPrueba(3)` ahora funciona incluso sin `PR-FIRE` en los pins si `tried1 && tried2`, como diagnóstico automático.
