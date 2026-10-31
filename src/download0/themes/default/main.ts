@@ -297,10 +297,6 @@ import { kernel } from 'download0/kernel'
   }
 
   // --- log capture -----------------------------------------------------------
-  const nativeLog = (typeof log === 'function') ? log : null
-  const nativeDebug = (typeof debug === 'function') ? debug : null
-  let logPatched = false
-
   function splitTag (msg: string) {
     if (msg.charAt(0) !== '[') return { tag: '', msg }
     const end = msg.indexOf(']')
@@ -376,23 +372,30 @@ import { kernel } from 'download0/kernel'
     if (!board.paging) repaintLog()
   }
 
-  try {
-    if (nativeLog !== null) {
-      ;(globalThis as unknown as Record<string, unknown>).log = function (msg: string) {
-        pushLine(msg)
-        nativeLog(msg)
-      }
-      logPatched = (globalThis as unknown as Record<string, unknown>).log !== nativeLog
+  // --- log capture -----------------------------------------------------------
+  // main.js is re-included every time the user comes back from the payload menu
+  // (payload_host backKey). Re-wrapping log() each time would duplicate every
+  // line, so the wrapper is installed ONCE and only the sink is swapped.
+  const G = globalThis as unknown as Record<string, unknown>
+  G.__blackboard_sink = pushLine
+  let logPatched = false
+  function hookLog (name: string): boolean {
+    const cur = G[name]
+    if (typeof cur !== 'function') return false
+    const tagged = cur as unknown as { __bbWrap?: boolean }
+    if (tagged.__bbWrap === true) return true
+    const orig = cur as (msg: string) => void
+    const wrapped = function (msg: string) {
+      const sink = G.__blackboard_sink
+      if (typeof sink === 'function') (sink as (m: string) => void)(String(msg))
+      orig(msg)
     }
-  } catch (e) { /* log stays native */ }
-  try {
-    if (nativeDebug !== null) {
-      ;(globalThis as unknown as Record<string, unknown>).debug = function (msg: string) {
-        pushLine(msg)
-        nativeDebug(msg)
-      }
-    }
-  } catch (e) { /* debug stays native */ }
+    ;(wrapped as unknown as { __bbWrap: boolean }).__bbWrap = true
+    G[name] = wrapped
+    return true
+  }
+  try { logPatched = hookLog('log') } catch (e) { /* log stays native */ }
+  try { hookLog('debug') } catch (e) { /* debug stays native */ }
 
   // --- painters --------------------------------------------------------------
   function setText (t: jsmaf.Text, v: string, style?: string) {
@@ -957,7 +960,12 @@ import { kernel } from 'download0/kernel'
   pushLine('[board] no autorun · 6/5 mover · X activar · RUN USERLAND primero')
 
   // --- watcher: refresh + dump once JB is confirmed -------------------------
-  jsmaf.setInterval(function () {
+  // a previous include (back from the payload menu) may have left a timer alive
+  const prevTimer = jsmafGet('board_timer') as number | undefined
+  if (typeof prevTimer === 'number') {
+    try { jsmaf.clearInterval(prevTimer) } catch (e) { /* ignore */ }
+  }
+  const timer = jsmaf.setInterval(function () {
     renderHeader()
     renderStatus()
     renderFoot()
@@ -973,4 +981,5 @@ import { kernel } from 'download0/kernel'
     }
     if (board.usb) dumpKernel(board.usb)
   }, 700)
+  jsmafSet('board_timer', timer)
 })()

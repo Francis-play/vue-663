@@ -536,9 +536,6 @@
   }
 
   // --- log capture -----------------------------------------------------------
-  var nativeLog = typeof log === 'function' ? log : null;
-  var nativeDebug = typeof debug === 'function' ? debug : null;
-  var logPatched = false;
   function splitTag(msg) {
     if (msg.charAt(0) !== '[') return {
       tag: '',
@@ -612,24 +609,34 @@
     trackLastMark(msg);
     if (!board.paging) repaintLog();
   }
+
+  // --- log capture -----------------------------------------------------------
+  // main.js is re-included every time the user comes back from the payload menu
+  // (payload_host backKey). Re-wrapping log() each time would duplicate every
+  // line, so the wrapper is installed ONCE and only the sink is swapped.
+  var G = globalThis;
+  G.__blackboard_sink = pushLine;
+  var logPatched = false;
+  function hookLog(name) {
+    var cur = G[name];
+    if (typeof cur !== 'function') return false;
+    var tagged = cur;
+    if (tagged.__bbWrap === true) return true;
+    var orig = cur;
+    var wrapped = function (msg) {
+      var sink = G.__blackboard_sink;
+      if (typeof sink === 'function') sink(String(msg));
+      orig(msg);
+    };
+    wrapped.__bbWrap = true;
+    G[name] = wrapped;
+    return true;
+  }
   try {
-    if (nativeLog !== null) {
-      ;
-      globalThis.log = function (msg) {
-        pushLine(msg);
-        nativeLog(msg);
-      };
-      logPatched = globalThis.log !== nativeLog;
-    }
+    logPatched = hookLog('log');
   } catch (e) {/* log stays native */}
   try {
-    if (nativeDebug !== null) {
-      ;
-      globalThis.debug = function (msg) {
-        pushLine(msg);
-        nativeDebug(msg);
-      };
-    }
+    hookLog('debug');
   } catch (e) {/* debug stays native */}
 
   // --- painters --------------------------------------------------------------
@@ -1166,7 +1173,14 @@
   pushLine('[board] no autorun · 6/5 mover · X activar · RUN USERLAND primero');
 
   // --- watcher: refresh + dump once JB is confirmed -------------------------
-  jsmaf.setInterval(function () {
+  // a previous include (back from the payload menu) may have left a timer alive
+  var prevTimer = jsmafGet('board_timer');
+  if (typeof prevTimer === 'number') {
+    try {
+      jsmaf.clearInterval(prevTimer);
+    } catch (e) {/* ignore */}
+  }
+  var timer = jsmaf.setInterval(function () {
     renderHeader();
     renderStatus();
     renderFoot();
@@ -1182,6 +1196,7 @@
     }
     if (board.usb) dumpKernel(board.usb);
   }, 700);
+  jsmafSet('board_timer', timer);
 })();
 
   } catch (e) { showErr((e && e.stack) || String(e)) }
