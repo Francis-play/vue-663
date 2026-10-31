@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VUE BLACKBOARD — Vista Final (TV 1920x1080)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#000; color:#e0e0e0; overflow:hidden; width:1920px; height:1080px; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+  #screen { width:1920px; height:1080px; position:relative; background:#000; }
+  .t { position:absolute; white-space:pre; line-height:1.1; font-family:'Consolas','Courier New',monospace; user-select:none; }
+  /* colores exactos del main.ts */
+  .bg-title { color:#FFFFFF; font-size:30px; }
+  .bg-status { color:#E9ECEF; font-size:18px; }
+  .bg-status-on { color:#69DB7C; font-size:18px; }
+  .bg-btn { color:#CED4DA; font-size:22px; }
+  .bg-btn-sel { color:#FFD43B; font-size:22px; }
+  .bg-btn-off { color:#6C757D; font-size:22px; opacity:0.45; }
+  .bg-mark { color:#FFD43B; font-size:19px; }
+  .bg-hdr { color:#ADB5BD; font-size:17px; }
+  .bg-pin { color:#ADB5BD; font-size:15px; }
+  .bg-foot { color:#868E96; font-size:14px; }
+  .lg-sys { color:#E9ECEF; font-size:17px; }
+  .lg-rel { color:#4DABF7; font-size:17px; }
+  .lg-net { color:#6BCF7F; font-size:17px; }
+  .lg-err { color:#FF6B6B; font-size:17px; }
+  .lg-warn { color:#FFA94D; font-size:17px; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <!-- título -->
+  <div class="t bg-title" style="left:40px;top:22px;">VUE BLACKBOARD · diag-build-2026-10-29</div>
+
+  <!-- status -->
+  <div class="t bg-status" style="left:40px;top:68px;">FW ?    uid 1001    sandbox 1    JB no</div>
+  <div class="t bg-status" style="left:40px;top:89px;">stage idle    t 0.0s    idle -</div>
+  <div class="t bg-status" style="left:40px;top:110px;">path -</div>
+  <div class="t bg-status" style="left:40px;top:131px;">phase -</div>
+  <div class="t bg-status" style="left:40px;top:152px;">kbase (pendiente)</div>
+  <div class="t bg-status" style="left:40px;top:173px;">preflight pending · log ON</div>
+  <div class="t bg-status" style="left:40px;top:194px;">swp -</div>
+  <div class="t bg-status" style="left:40px;top:215px;">tried 1:- 2:- 3:-</div>
+
+  <!-- botones -->
+  <div class="t bg-btn" style="left:40px;top:250px;">  RUN USERLAND</div>
+  <div class="t bg-btn-off" style="left:40px;top:294px;opacity:0.45;">  PRUEBA 1 — relapse (IDT 1c1d00, 1 intento)</div>
+  <div class="t bg-btn-off" style="left:40px;top:338px;opacity:0.45;">  PRUEBA 2 — relapse (IDT-ALT 1c1d40)</div>
+  <div class="t bg-btn-off" style="left:40px;top:382px;opacity:0.45;">  PRUEBA 3 — SWEEP (sin datos)</div>
+  <div class="t bg-btn-off" style="left:40px;top:426px;opacity:0.45;">  LOG ▲ (más viejo)</div>
+  <div class="t bg-btn-off" style="left:40px;top:470px;opacity:0.45;">  LOG ▼ (más nuevo)</div>
+
+  <!-- counts -->
+  <div class="t bg-hdr" style="left:40px;top:522px;">lines rel 0 · net 0 · ldr 0 · board 3</div>
+
+  <!-- last mark header -->
+  <div class="t bg-hdr" style="left:40px;top:552px;">LAST</div>
+
+  <!-- last mark -->
+  <div class="t bg-mark" style="left:40px;top:572px;">LAST [board] blackboard ready (build diag-build-2026-10-29) — no autorun, press RU</div>
+  <div class="t bg-mark" style="left:40px;top:594px;">     </div>
+
+  <!-- pins (pinned marks left) -->
+  <div class="t bg-hdr" style="left:40px;top:616px;">PINNED</div>
+  <div class="t bg-pin" style="left:40px;top:638px;">START ·</div>
+  <div class="t bg-pin" style="left:40px;top:657px;">PR-CFG ·</div>
+  <div class="t bg-pin" style="left:40px;top:676px;">PR-SATURATE-ENTER ·</div>
+  <div class="t bg-pin" style="left:40px;top:695px;">PR-SATURATE ·</div>
+  <div class="t bg-pin" style="left:40px;top:714px;">PR-POOL ·</div>
+  <div class="t bg-pin" style="left:40px;top:733px;">PR-WORKER-READY ·</div>
+  <div class="t bg-pin" style="left:40px;top:752px;">ARM-FIN ·</div>
+  <div class="t bg-pin" style="left:40px;top:771px;">PR-FIRE ·</div>
+  <div class="t bg-pin" style="left:40px;top:790px;">PR-LEAK ·</div>
+  <div class="t bg-pin" style="left:40px;top:809px;">PR-PASSA ·</div>
+  <div class="t bg-pin" style="left:40px;top:828px;">PR-PASSA-NOCROSS ·</div>
+  <div class="t bg-pin" style="left:40px;top:847px;">PR-UCRED ·</div>
+  <div class="t bg-pin" style="left:40px;top:866px;">ANCHOR-HANDLER ·</div>
+  <div class="t bg-pin" style="left:40px;top:885px;">ANCHOR-KERNEL-BASE ·</div>
+  <div class="t bg-pin" style="left:40px;top:904px;">IDT-ALT ·</div>
+  <div class="t bg-pin" style="left:40px;top:923px;">SWEEP-SUMMARY ·</div>
+  <div class="t bg-pin" style="left:40px;top:942px;">FAIL-FINAL ·</div>
+
+  <!-- log header -->
+  <div class="t bg-hdr" style="left:680px;top:22px;">LOG · pág 1/1 · ring 3/3000 · tail</div>
+
+  <!-- log lines -->
+  <div class="t lg-sys" style="left:680px;top:50px;">VUE BLACKBOARD · diag-build-2026-10-29</div>
+  <div class="t lg-sys" style="left:680px;top:76px;">--- session start ---</div>
+  <div class="t lg-sys" style="left:680px;top:102px;">[loader] manual mode: preflight only (no exploit dispatch, no watchdog)</div>
+  <div class="t lg-sys" style="left:680px;top:128px;">[loader] fw=12.52 is125x=1 — waiting for PRUEBA 1/2/3</div>
+  <div class="t lg-rel" style="left:680px;top:154px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=1 retries=0 idt=0x1c1d00 sweep=0 noFallback=1 owner=0x18 sink=0x20 tduc=0x130</div>
+  <div class="t lg-err" style="left:680px;top:180px;color:#FF6B6B;">[relapse:FAIL-FINAL] leak: no owner stamp (benign=1)</div>
+  <div class="t lg-err" style="left:680px;top:206px;color:#FF6B6B;">[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x20 tduc=0x130 fail: leak: no owner stamp</div>
+  <div class="t lg-sys" style="left:680px;top:232px;">[loader] preflight OK (manual mode)</div>
+  <div class="t lg-sys" style="left:680px;top:258px;">RUN USERLAND -> include(loader.js) [manual mode, no autorun]</div>
+  <div class="t lg-sys" style="left:680px;top:284px;">[loader] All scripts loaded</div>
+  <div class="t lg-sys" style="left:680px;top:310px;">[loader] fw=12.52 is125x=1 — waiting for PRUEBA 1/2/3</div>
+  <div class="t lg-rel" style="left:680px;top:336px;color:#4DABF7;">[relapse:START] try 1 maxRetries=0 idt=0x1c1d00 sweep=0 noFallback=1</div>
+  <div class="t lg-rel" style="left:680px;top:362px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=2 retries=0 idt=0x1c1d00 sweep=0 noFallback=1</div>
+  <div class="t lg-rel" style="left:680px;top:388px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=3 retries=3 idt=auto sweep=1 noFallback=1 owner=0x18 sink=0x20 tduc=0x130</div>
+  <div class="t lg-rel" style="left:680px;top:414px;color:#4DABF7;">[relapse:PR-FIRE] passA nodes=65600 sink_moved=17 node0_sink=0 f_socket=-1 f_hits=0 state=0x0</div>
+  <div class="t lg-rel" style="left:680px;top:440px;color:#4DABF7;">[relapse:ANCHOR-HANDLER] handler=0xffffffff8022c140 rva=0x1c1d40</div>
+  <div class="t lg-rel" style="left:680px;top:466px;color:#4DABF7;">[relapse:SWEEP-SUMMARY] owner=0x18 sink=0x28 tduc=0x128 anchor-ok rva=0x1c1d40</div>
+  <div class="t lg-rel" style="left:680px;top:492px;color:#4DABF7;">[relapse:SWEEP-RVA] rva=0x1c1d40 (was 0x1c1d00) 0x1c1d00->0x80210040 0x1c1d20->0x80210020 0x1c1d40->0x80210000* 0x1c1d50->0x8020fff0</div>
+  <div class="t lg-err" style="left:680px;top:518px;color:#FF6B6B;">[relapse:FAIL-FINAL] kf: sysctl oid window did not open (benign=0)</div>
+  <div class="t lg-rel" style="left:680px;top:544px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=3 retries=3 idt=auto sweep=1 noFallback=1 owner=0x18 sink=0x28 tduc=0x128</div>
+  <div class="t lg-rel" style="left:680px;top:570px;color:#4DABF7;">[relapse:START] try 1 maxRetries=3 idt=auto sweep=1 noFallback=1</div>
+  <div class="t lg-rel" style="left:680px;top:596px;color:#4DABF7;">[relapse:DEBUG-RESET] attempt=3 retries=3 idt=auto sweep=1 noFallback=1 owner=0x18 sink=0x28 tduc=0x128</div>
+  <div class="t lg-rel" style="left:680px;top:622px;color:#4DABF7;">[relapse:SWEEP-OWNER] offset=0x18 hits=163 value=ffff88800c3a4000 (default 0x18)</div>
+  <div class="t lg-err" style="left:680px;top:648px;color:#FF6B6B;">[relapse:FAIL-FINAL] leak: no owner stamp (benign=1)</div>
+  <div class="t lg-sys" style="left:680px;top:674px;">[board] blackboard ready (build diag-build-2026-10-29) — no autorun, press RUN USERLAND</div>
+
+  <!-- pinned status -->
+  <div class="t bg-status" style="left:40px;top:986px;">DUMP: JB OK but no USB mounted (/mnt/usb0-3/vue_debug.txt)</div>
+  <div class="t bg-foot" style="left:40px;top:1006px;">writes 0 msgs · USB none</div>
+
+  <!-- bottom info -->
+  <div class="t bg-foot" style="left:40px;top:1046px;">teclas: 6/5 ↓ · 4/7 ↑ · X activa</div>
+  <div class="t bg-foot" style="left:680px;top:950px;">knobs rel retry=3 spin=40000000 towait=1000 | nc kq=5000</div>
+</div>
+</body>
+</html>

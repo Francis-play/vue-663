@@ -377,39 +377,6 @@ import { kernel } from 'download0/kernel'
     repaintPins()
   }
 
-  function renderStatus () {
-    readCreds()
-    const fw = jsmafGet('fw_version') as string | undefined
-    const path = jsmafGet('exploit_path') as string | undefined
-    const phase = jsmafGet('relapse_phase') as string | undefined
-    const done = !!jsmaf.vue_exploit_done
-    const uid = board.uid
-    const sand = board.sand
-    const jb = uid === 0 && sand === 0
-    const kbase = kbaseHex()
-    const elapsed = ((Date.now() - board.started) / 1000).toFixed(1)
-    const act = jsmafGet('relapse_activity') as number | undefined
-    const idle = act ? ((Date.now() - act) / 1000).toFixed(1) + 's' : '-'
-    ui.status[0]!.text = 'FW ' + (fw || '?') + '    uid ' + (uid === null ? '?' : uid) +
-      '    sandbox ' + (sand === null ? '?' : sand) + '    JB ' + (jb ? 'YES' : 'no')
-    ui.status[0]!.style = jb ? 'bg-status-on' : 'bg-status'
-    ui.status[1]!.text = 'stage ' + board.stage + (done ? ' · EXPLOIT DONE' : '') + '    t ' + elapsed + 's    idle ' + idle
-    ui.status[2]!.text = 'path ' + (path || '-')
-    ui.status[3]!.text = 'phase ' + (phase || '-')
-    ui.status[4]!.text = 'kbase ' + (kbase || '(pendiente)')
-    ui.status[5]!.text = 'preflight ' + (board.preflight ? 'done' : 'pending') +
-      (logPatched ? ' · log ON' : ' · log OFF')
-    ui.status[6]!.text = 'swp ' + ((jsmafGet('sweep_summary') as string | undefined) || '-')
-    ui.status[7]!.text = 'tried 1:' + (board.tried1 ? 'y' : '-') + ' 2:' + (board.tried2 ? 'y' : '-') + ' 3:' + (board.tried3 ? 'y' : '-')
-    ui.counts.text = 'lines rel ' + board.counts.rel + ' · net ' + board.counts.net +
-      ' · ldr ' + board.counts.ldr + ' · board ' + board.counts.board
-    ui.foot[0]!.text = board.dump
-    ui.foot[1]!.text = 'writes ' + board.history.length + ' msgs · USB ' + (board.usb || 'none')
-    ui.logFoot[0]!.text = 'teclas: 6/5 ↓ · 4/7 ↑ · X activa'
-    ui.logFoot[1]!.text = 'knobs ' + knobLine()
-    updateButtons()
-  }
-
   function pageBy (dir: number) {
     if (dir > 0) {
       if (!board.paging) {
@@ -506,7 +473,8 @@ import { kernel } from 'download0/kernel'
   }
 
   const confirmKey = jsmaf.circleIsAdvanceButton ? 13 : 14
-  jsmaf.onKeyDown = function (keyCode: number) {    if (keyCode === 6 || keyCode === 5) {
+  jsmaf.onKeyDown = function (keyCode: number) {
+    if (keyCode === 6 || keyCode === 5) {
       board.sel = (board.sel + 1) % BUTTONS.length
       updateButtons()
     } else if (keyCode === 4 || keyCode === 7) {
